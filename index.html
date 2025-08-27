@@ -7,103 +7,122 @@
   <link href="https://unpkg.com/maplibre-gl@3.5.2/dist/maplibre-gl.css" rel="stylesheet" />
   <style>
     :root { color-scheme: light dark; }
-    body, html { margin:0; padding:0; height:100%; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
-    #map { width:100%; height:100%; }
-    .maplibregl-ctrl-logo { display: none; }
+    html, body { height: 100%; margin: 0; padding: 0; }
+    #map { width: 100%; height: 100%; }
     .brand {
       position: absolute; z-index: 10; left: 12px; top: 12px;
       padding: 6px 10px; border-radius: 10px; backdrop-filter: blur(6px);
       background: color-mix(in oklab, Canvas, CanvasText 10% / 65%);
-      font-weight: 600; font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,.12);
+      font: 600 14px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      box-shadow: 0 2px 8px rgba(0,0,0,.12);
     }
   </style>
 </head>
 <body>
   <div id="map"></div>
   <div class="brand">Merced County 511</div>
+
   <script src="https://unpkg.com/maplibre-gl@3.5.2/dist/maplibre-gl.js"></script>
   <script>
-    const MERCED_COUNTY_CENTER = [-120.48, 37.30];
+    // --- Map constants ---
+    // Center of Merced County (lon, lat)
+    const MERCED_CENTER = [-120.48, 37.30];
 
-    // Define bounding box around Merced + nearby counties
-    // [west, south, east, north]
-    const BOUNDS = [
-      -121.2, 36.7, // southwest corner (long, lat)
-      -119.7, 37.9  // northeast corner (long, lat)
+    // Constrain users to Merced + nearby counties
+    // [west, south], [east, north]
+    const VIEW_BOUNDS = [
+      [-121.35, 36.60], // SW
+      [-119.30, 37.90]  // NE
     ];
 
+    // --- Create the map with a minimal (empty) style we fully control ---
     const map = new maplibregl.Map({
       container: 'map',
-      style: 'https://demotiles.maplibre.org/style.json',
-      center: MERCED_COUNTY_CENTER,
+      style: { version: 8, sources: {}, layers: [] },
+      center: MERCED_CENTER,
       zoom: 9,
-      maxBounds: BOUNDS // Prevent zooming/panning too far outside
+      minZoom: 7.8,                 // prevent zooming out to globe
+      maxZoom: 18,                  // allow close inspection
+      maxBounds: VIEW_BOUNDS,       // hard panning/zooming bounds
+      attributionControl: true
     });
 
+    // Basic UI controls
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
     map.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }));
+    map.dragRotate.disable();
+    map.touchZoomRotate.disableRotation();
 
     map.on('load', () => {
-      if (!map.getSource('osm')) {
-        map.addSource('osm', {
-          type: 'raster',
-          tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-          tileSize: 256,
-          attribution: '© OpenStreetMap contributors'
-        });
-        map.addLayer({ id: 'osm', type: 'raster', source: 'osm' });
-      }
+      // --- Basemap: OSM raster (streets/boundaries) ---
+      map.addSource('osm', {
+        type: 'raster',
+        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        attribution: '© OpenStreetMap contributors'
+      });
+      map.addLayer({ id: 'osm', type: 'raster', source: 'osm' });
 
-      if (!map.getSource('esri')) {
-        map.addSource('esri', {
-          type: 'raster',
-          tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
-          tileSize: 256,
-          attribution: 'Esri, Maxar, Earthstar Geographics, and the GIS User Community'
-        });
-        map.addLayer({ id: 'satellite', type: 'raster', source: 'esri', layout: { visibility: 'none' } });
-      }
+      // --- Basemap: Esri World Imagery (satellite) ---
+      map.addSource('esri', {
+        type: 'raster',
+        tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+        tileSize: 256,
+        attribution: 'Esri, Maxar, Earthstar Geographics, and the GIS User Community'
+      });
+      map.addLayer({ id: 'satellite', type: 'raster', source: 'esri', layout: { visibility: 'none' } });
 
-      if (!map.getSource('ca-counties')) {
-        map.addSource('ca-counties', {
-          type: 'geojson',
-          data: 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/california-counties.geojson'
-        });
+      // --- California counties overlay ---
+      map.addSource('ca-counties', {
+        type: 'geojson',
+        data: 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/california-counties.geojson'
+      });
 
-        map.addLayer({
-          id: 'county-outline',
-          type: 'line',
-          source: 'ca-counties',
-          paint: {
-            'line-color': '#333',
-            'line-width': 1.2,
-            'line-opacity': 0.8
-          }
-        });
+      // Subtle county fill (add first so outline draws on top)
+      map.addLayer({
+        id: 'county-fill',
+        type: 'fill',
+        source: 'ca-counties',
+        paint: {
+          'fill-color': '#6b7280',
+          'fill-opacity': 0.07
+        }
+      });
 
-        map.addLayer({
-          id: 'county-fill',
-          type: 'fill',
-          source: 'ca-counties',
-          paint: {
-            'fill-color': '#4b5563',
-            'fill-opacity': 0.06
-          }
-        }, 'county-outline');
+      // County outlines
+      map.addLayer({
+        id: 'county-outline',
+        type: 'line',
+        source: 'ca-counties',
+        paint: {
+          'line-color': '#222',
+          'line-width': 1.5,
+          'line-opacity': 0.9
+        }
+      });
 
-        map.addLayer({
-          id: 'merced-highlight',
-          type: 'line',
-          source: 'ca-counties',
-          filter: ['==', ['get', 'name'], 'Merced'],
-          paint: {
-            'line-color': '#0ea5e9',
-            'line-width': 3
-          }
-        });
-      }
+      // Highlight Merced County (support "Merced" or "Merced County" names)
+      map.addLayer({
+        id: 'merced-highlight',
+        type: 'line',
+        source: 'ca-counties',
+        filter: ['match', ['get', 'name'], ['Merced', 'Merced County'], true, false],
+        paint: {
+          'line-color': '#0ea5e9',
+          'line-width': 3
+        }
+      });
+
+      // Fit to the bounds once on load (respects maxBounds)
+      map.fitBounds(VIEW_BOUNDS, { padding: 40, duration: 0 });
+
+      // Mouse coordinate tooltip for quick QA
+      map.on('mousemove', (e) => {
+        map.getCanvas().title = `${e.lngLat.lng.toFixed(5)}, ${e.lngLat.lat.toFixed(5)}`;
+      });
     });
 
+    // --- Basemap toggle (Streets ↔ Satellite) ---
     (function addBasemapToggle(){
       const btn = document.createElement('button');
       btn.textContent = 'Satellite';
@@ -111,10 +130,23 @@
       btn.style.padding = '6px 10px';
       btn.onclick = () => {
         const isSatVisible = map.getLayoutProperty('satellite', 'visibility') !== 'none';
-        if (map.getLayer('satellite')) map.setLayoutProperty('satellite', 'visibility', isSatVisible ? 'none' : 'visible');
-        if (map.getLayer('osm')) map.setLayoutProperty('osm', 'visibility', isSatVisible ? 'visible' : 'none');
+        map.setLayoutProperty('satellite', 'visibility', isSatVisible ? 'none' : 'visible');
+        map.setLayoutProperty('osm', 'visibility', isSatVisible ? 'visible' : 'none');
         btn.textContent = isSatVisible ? 'Satellite' : 'Streets';
       };
+      const corner = document.querySelector('.maplibregl-ctrl-top-right') || document.body;
+      const wrap = document.createElement('div');
+      wrap.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+      wrap.appendChild(btn);
+      corner.appendChild(wrap);
+    })();
+
+    // --- Home button: quickly refit to the allowed extent ---
+    (function addHome(){
+      const btn = document.createElement('button');
+      btn.textContent = 'Home';
+      btn.style.padding = '6px 10px';
+      btn.onclick = () => map.fitBounds(VIEW_BOUNDS, { padding: 40, duration: 500 });
       const corner = document.querySelector('.maplibregl-ctrl-top-right') || document.body;
       const wrap = document.createElement('div');
       wrap.className = 'maplibregl-ctrl maplibregl-ctrl-group';
@@ -124,5 +156,3 @@
   </script>
 </body>
 </html>
-
-
