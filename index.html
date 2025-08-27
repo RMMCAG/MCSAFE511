@@ -22,92 +22,107 @@
   <div id="map"></div>
   <div class="brand">Merced County 511</div>
   <script src="https://unpkg.com/maplibre-gl@3.5.2/dist/maplibre-gl.js"></script>
-  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
   <script>
-    // Approximate center of Merced County, CA
-    // Coordinates: longitude, latitude
     const MERCED_COUNTY_CENTER = [-120.48, 37.30];
+
+    // Define bounding box around Merced + nearby counties
+    // [west, south, east, north]
+    const BOUNDS = [
+      -121.2, 36.7, // southwest corner (long, lat)
+      -119.7, 37.9  // northeast corner (long, lat)
+    ];
 
     const map = new maplibregl.Map({
       container: 'map',
       style: 'https://demotiles.maplibre.org/style.json',
       center: MERCED_COUNTY_CENTER,
-      zoom: 9
+      zoom: 9,
+      maxBounds: BOUNDS // Prevent zooming/panning too far outside
     });
 
-    // Basic UI controls
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
     map.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }));
 
-    // Add state & county boundaries (ArcGIS open data)
-    async function addBoundaries() {
-      // California state boundary (generalized)
-      const caUrl = 'https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/USA_States_Generalized_Boundaries/FeatureServer/0/query?where=STATE_NAME%3D%27California%27&outFields=STATE_NAME&outSR=4326&f=geojson';
-      // Merced County boundary (generalized)
-      const mercedUrl = 'https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/USA_Counties_Generalized_Boundaries/FeatureServer/0/query?where=NAME%3D%27Merced%27%20AND%20STATE_NAME%3D%27California%27&outFields=NAME%2CSTATE_NAME&outSR=4326&f=geojson';
+    map.on('load', () => {
+      if (!map.getSource('osm')) {
+        map.addSource('osm', {
+          type: 'raster',
+          tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+          tileSize: 256,
+          attribution: '© OpenStreetMap contributors'
+        });
+        map.addLayer({ id: 'osm', type: 'raster', source: 'osm' });
+      }
 
-      const [ca, merced] = await Promise.all([
-        fetch(caUrl).then(r => r.json()),
-        fetch(mercedUrl).then(r => r.json())
-      ]);
+      if (!map.getSource('esri')) {
+        map.addSource('esri', {
+          type: 'raster',
+          tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+          tileSize: 256,
+          attribution: 'Esri, Maxar, Earthstar Geographics, and the GIS User Community'
+        });
+        map.addLayer({ id: 'satellite', type: 'raster', source: 'esri', layout: { visibility: 'none' } });
+      }
 
-      map.addSource('ca-state', { type: 'geojson', data: ca });
-      map.addSource('merced-county', { type: 'geojson', data: merced });
+      if (!map.getSource('ca-counties')) {
+        map.addSource('ca-counties', {
+          type: 'geojson',
+          data: 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/california-counties.geojson'
+        });
 
-      // State outline
-      map.addLayer({
-        id: 'ca-outline',
-        type: 'line',
-        source: 'ca-state',
-        paint: {
-          'line-color': '#5b6b7a',
-          'line-width': 1.2,
-          'line-dasharray': [2, 2]
-        }
-      });
+        map.addLayer({
+          id: 'county-outline',
+          type: 'line',
+          source: 'ca-counties',
+          paint: {
+            'line-color': '#333',
+            'line-width': 1.2,
+            'line-opacity': 0.8
+          }
+        });
 
-      // County fill (subtle) & outline (emphasis)
-      map.addLayer({
-        id: 'merced-fill',
-        type: 'fill',
-        source: 'merced-county',
-        paint: {
-          'fill-color': '#4c8df6',
-          'fill-opacity': 0.10
-        }
-      });
+        map.addLayer({
+          id: 'county-fill',
+          type: 'fill',
+          source: 'ca-counties',
+          paint: {
+            'fill-color': '#4b5563',
+            'fill-opacity': 0.06
+          }
+        }, 'county-outline');
 
-      map.addLayer({
-        id: 'merced-outline',
-        type: 'line',
-        source: 'merced-county',
-        paint: {
-          'line-color': '#2a6af7',
-          'line-width': 3
-        }
-      });
-
-      // Fit the map to the county boundary with padding
-      const bbox = turf.bbox(merced);
-      map.fitBounds(bbox, { padding: 40, animate: false });
-    }
-
-    map.once('load', addBoundaries);
-
-    // Optional: show current mouse coordinates for quick QA
-    map.on('mousemove', (e) => {
-      map.getCanvas().title = `${e.lngLat.lng.toFixed(5)}, ${e.lngLat.lat.toFixed(5)}`;
+        map.addLayer({
+          id: 'merced-highlight',
+          type: 'line',
+          source: 'ca-counties',
+          filter: ['==', ['get', 'name'], 'Merced'],
+          paint: {
+            'line-color': '#0ea5e9',
+            'line-width': 3
+          }
+        });
+      }
     });
 
-    // Basic UI controls
-    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
-    map.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }));
-
-    // Optional: show current mouse coordinates for quick QA
-    map.on('mousemove', (e) => {
-      map.getCanvas().title = `${e.lngLat.lng.toFixed(5)}, ${e.lngLat.lat.toFixed(5)}`;
-    });
+    (function addBasemapToggle(){
+      const btn = document.createElement('button');
+      btn.textContent = 'Satellite';
+      btn.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+      btn.style.padding = '6px 10px';
+      btn.onclick = () => {
+        const isSatVisible = map.getLayoutProperty('satellite', 'visibility') !== 'none';
+        if (map.getLayer('satellite')) map.setLayoutProperty('satellite', 'visibility', isSatVisible ? 'none' : 'visible');
+        if (map.getLayer('osm')) map.setLayoutProperty('osm', 'visibility', isSatVisible ? 'visible' : 'none');
+        btn.textContent = isSatVisible ? 'Satellite' : 'Streets';
+      };
+      const corner = document.querySelector('.maplibregl-ctrl-top-right') || document.body;
+      const wrap = document.createElement('div');
+      wrap.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+      wrap.appendChild(btn);
+      corner.appendChild(wrap);
+    })();
   </script>
 </body>
 </html>
+
 
