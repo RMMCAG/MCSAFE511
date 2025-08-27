@@ -9,76 +9,74 @@
     :root { color-scheme: light dark; }
     html, body { height: 100%; margin: 0; padding: 0; }
     #map { width: 100%; height: 100%; }
-    .brand {
-      position: absolute; z-index: 10; left: 12px; top: 12px;
-      padding: 6px 10px; border-radius: 10px; backdrop-filter: blur(6px);
-      background: color-mix(in oklab, Canvas, CanvasText 10% / 65%);
-      font: 600 14px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-      box-shadow: 0 2px 8px rgba(0,0,0,.12);
-    }
+    .ctrl-btn { padding: 6px 10px; }
   </style>
 </head>
 <body>
   <div id="map"></div>
-  <div class="brand">Merced County 511</div>
 
   <script src="https://unpkg.com/maplibre-gl@3.5.2/dist/maplibre-gl.js"></script>
   <script>
-    // --- Map constants ---
-    // Center of Merced County (lon, lat)
+    // --------- CONFIG ---------
     const MERCED_CENTER = [-120.48, 37.30];
-
     // Constrain users to Merced + nearby counties
-    // [west, south], [east, north]
     const VIEW_BOUNDS = [
-      [-121.35, 36.60], // SW
-      [-119.30, 37.90]  // NE
+      [-121.35, 36.60], // [W, S]
+      [-119.30, 37.90]  // [E, N]
     ];
 
-    // --- Create the map with a minimal (empty) style we fully control ---
+    // --------- MAP ---------
+    // Use a known-good base style so you immediately see roads/labels
     const map = new maplibregl.Map({
       container: 'map',
-      style: { version: 8, sources: {}, layers: [] },
+      style: 'https://demotiles.maplibre.org/style.json',
       center: MERCED_CENTER,
       zoom: 9,
-      minZoom: 7.8,                 // prevent zooming out to globe
-      maxZoom: 18,                  // allow close inspection
-      maxBounds: VIEW_BOUNDS,       // hard panning/zooming bounds
+      minZoom: 7.8,                   // prevent zooming out to the globe
+      maxZoom: 18,
+      maxBounds: VIEW_BOUNDS,         // hard bounds box
       attributionControl: true
     });
 
-    // Basic UI controls
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
     map.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }));
     map.dragRotate.disable();
     map.touchZoomRotate.disableRotation();
 
-    map.on('load', () => {
-      // --- Basemap: OSM raster (streets/boundaries) ---
-      map.addSource('osm', {
-        type: 'raster',
-        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-        tileSize: 256,
-        attribution: '© OpenStreetMap contributors'
-      });
-      map.addLayer({ id: 'osm', type: 'raster', source: 'osm' });
+    // Log any style or tile errors to help debugging on GH Pages
+    map.on('error', (e) => { console.error('Map error:', e && e.error || e); });
 
-      // --- Basemap: Esri World Imagery (satellite) ---
-      map.addSource('esri', {
+    map.on('load', () => {
+      // Ensure we start within our allowed box
+      map.fitBounds(VIEW_BOUNDS, { padding: 40, duration: 0 });
+
+      // ---- Satellite raster (Esri) ----
+      map.addSource('satellite-src', {
         type: 'raster',
         tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
         tileSize: 256,
         attribution: 'Esri, Maxar, Earthstar Geographics, and the GIS User Community'
       });
-      map.addLayer({ id: 'satellite', type: 'raster', source: 'esri', layout: { visibility: 'none' } });
+      // Put satellite beneath labels/roads. If a reference layer exists, insert before it.
+      const beforeId = map.getStyle().layers.find(l => /label/i.test(l.id))?.id;
+      map.addLayer({ id: 'satellite', type: 'raster', source: 'satellite-src', layout: { visibility: 'none' } }, beforeId);
 
-      // --- California counties overlay ---
+      // ---- Streets raster (OSM) — optional extra sanity layer under everything ----
+      map.addSource('osm-src', {
+        type: 'raster',
+        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        attribution: '© OpenStreetMap contributors'
+      });
+      map.addLayer({ id: 'osm-raster', type: 'raster', source: 'osm-src', layout: { visibility: 'visible' } }, 'satellite');
+
+      // ---- California counties overlay ----
       map.addSource('ca-counties', {
         type: 'geojson',
         data: 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/california-counties.geojson'
       });
 
-      // Subtle county fill (add first so outline draws on top)
+      // Filled polygons (very subtle)
       map.addLayer({
         id: 'county-fill',
         type: 'fill',
@@ -89,7 +87,7 @@
         }
       });
 
-      // County outlines
+      // County outlines on top
       map.addLayer({
         id: 'county-outline',
         type: 'line',
@@ -101,7 +99,7 @@
         }
       });
 
-      // Highlight Merced County (support "Merced" or "Merced County" names)
+      // Bold highlight for Merced (match either name string)
       map.addLayer({
         id: 'merced-highlight',
         type: 'line',
@@ -112,27 +110,18 @@
           'line-width': 3
         }
       });
-
-      // Fit to the bounds once on load (respects maxBounds)
-      map.fitBounds(VIEW_BOUNDS, { padding: 40, duration: 0 });
-
-      // Mouse coordinate tooltip for quick QA
-      map.on('mousemove', (e) => {
-        map.getCanvas().title = `${e.lngLat.lng.toFixed(5)}, ${e.lngLat.lat.toFixed(5)}`;
-      });
     });
 
-    // --- Basemap toggle (Streets ↔ Satellite) ---
+    // ---- Basemap toggle (Streets ↔ Satellite) ----
     (function addBasemapToggle(){
       const btn = document.createElement('button');
       btn.textContent = 'Satellite';
-      btn.className = 'maplibregl-ctrl maplibregl-ctrl-group';
-      btn.style.padding = '6px 10px';
+      btn.className = 'maplibregl-ctrl maplibregl-ctrl-group ctrl-btn';
       btn.onclick = () => {
-        const isSatVisible = map.getLayoutProperty('satellite', 'visibility') !== 'none';
-        map.setLayoutProperty('satellite', 'visibility', isSatVisible ? 'none' : 'visible');
-        map.setLayoutProperty('osm', 'visibility', isSatVisible ? 'visible' : 'none');
-        btn.textContent = isSatVisible ? 'Satellite' : 'Streets';
+        const visible = map.getLayoutProperty('satellite', 'visibility') !== 'none';
+        map.setLayoutProperty('satellite', 'visibility', visible ? 'none' : 'visible');
+        map.setLayoutProperty('osm-raster', 'visibility', visible ? 'visible' : 'none');
+        btn.textContent = visible ? 'Satellite' : 'Streets';
       };
       const corner = document.querySelector('.maplibregl-ctrl-top-right') || document.body;
       const wrap = document.createElement('div');
@@ -141,12 +130,12 @@
       corner.appendChild(wrap);
     })();
 
-    // --- Home button: quickly refit to the allowed extent ---
+    // ---- Home button: refit to bounds ----
     (function addHome(){
       const btn = document.createElement('button');
       btn.textContent = 'Home';
-      btn.style.padding = '6px 10px';
-      btn.onclick = () => map.fitBounds(VIEW_BOUNDS, { padding: 40, duration: 500 });
+      btn.className = 'maplibregl-ctrl maplibregl-ctrl-group ctrl-btn';
+      btn.onclick = () => map.fitBounds(VIEW_BOUNDS, { padding: 40, duration: 400 });
       const corner = document.querySelector('.maplibregl-ctrl-top-right') || document.body;
       const wrap = document.createElement('div');
       wrap.className = 'maplibregl-ctrl maplibregl-ctrl-group';
