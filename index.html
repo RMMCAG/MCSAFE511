@@ -21,7 +21,7 @@
     const MERCED_CENTER = [-120.48, 37.30];
     // Constrain users to Merced + nearby counties
     const VIEW_BOUNDS = [
-      [-122.35, 36.60], // [W, S]
+      [-123.35, 36.60], // [W, S]
       [-119.30, 37.90]  // [E, N]
     ];
 
@@ -32,7 +32,7 @@
       style: 'https://demotiles.maplibre.org/style.json',
       center: MERCED_CENTER,
       zoom: 9,
-      minZoom: 7.8,                   // prevent zooming out to the globe
+      minZoom: 7.5,                   // prevent zooming out to the globe
       maxZoom: 18,
       maxBounds: VIEW_BOUNDS,         // hard bounds box
       attributionControl: true
