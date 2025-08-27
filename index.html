@@ -18,7 +18,7 @@
   <script src="https://unpkg.com/maplibre-gl@3.5.2/dist/maplibre-gl.js"></script>
   <script>
     // --------- CONFIG ---------
-    const MERCED_CENTER = [-120.48, 37.30];
+    const MERCED_CENTER = [-120.58, 37.30];
     // Constrain users to Merced + nearby counties
     const VIEW_BOUNDS = [
       [-123.35, 36.60], // [W, S]
@@ -32,7 +32,7 @@
       style: 'https://demotiles.maplibre.org/style.json',
       center: MERCED_CENTER,
       zoom: 9,
-      minZoom: 7.5,                   // prevent zooming out to the globe
+      minZoom: 7,                   // prevent zooming out to the globe
       maxZoom: 18,
       maxBounds: VIEW_BOUNDS,         // hard bounds box
       attributionControl: true
