@@ -22,6 +22,7 @@
   <div id="map"></div>
   <div class="brand">Merced County 511</div>
   <script src="https://unpkg.com/maplibre-gl@3.5.2/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
   <script>
     // Approximate center of Merced County, CA
     // Coordinates: longitude, latitude
@@ -38,6 +39,70 @@
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
     map.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }));
 
+    // Add state & county boundaries (ArcGIS open data)
+    async function addBoundaries() {
+      // California state boundary (generalized)
+      const caUrl = 'https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/USA_States_Generalized_Boundaries/FeatureServer/0/query?where=STATE_NAME%3D%27California%27&outFields=STATE_NAME&outSR=4326&f=geojson';
+      // Merced County boundary (generalized)
+      const mercedUrl = 'https://services.arcgis.com/P3ePLMYs2RVChkJx/ArcGIS/rest/services/USA_Counties_Generalized_Boundaries/FeatureServer/0/query?where=NAME%3D%27Merced%27%20AND%20STATE_NAME%3D%27California%27&outFields=NAME%2CSTATE_NAME&outSR=4326&f=geojson';
+
+      const [ca, merced] = await Promise.all([
+        fetch(caUrl).then(r => r.json()),
+        fetch(mercedUrl).then(r => r.json())
+      ]);
+
+      map.addSource('ca-state', { type: 'geojson', data: ca });
+      map.addSource('merced-county', { type: 'geojson', data: merced });
+
+      // State outline
+      map.addLayer({
+        id: 'ca-outline',
+        type: 'line',
+        source: 'ca-state',
+        paint: {
+          'line-color': '#5b6b7a',
+          'line-width': 1.2,
+          'line-dasharray': [2, 2]
+        }
+      });
+
+      // County fill (subtle) & outline (emphasis)
+      map.addLayer({
+        id: 'merced-fill',
+        type: 'fill',
+        source: 'merced-county',
+        paint: {
+          'fill-color': '#4c8df6',
+          'fill-opacity': 0.10
+        }
+      });
+
+      map.addLayer({
+        id: 'merced-outline',
+        type: 'line',
+        source: 'merced-county',
+        paint: {
+          'line-color': '#2a6af7',
+          'line-width': 3
+        }
+      });
+
+      // Fit the map to the county boundary with padding
+      const bbox = turf.bbox(merced);
+      map.fitBounds(bbox, { padding: 40, animate: false });
+    }
+
+    map.once('load', addBoundaries);
+
+    // Optional: show current mouse coordinates for quick QA
+    map.on('mousemove', (e) => {
+      map.getCanvas().title = `${e.lngLat.lng.toFixed(5)}, ${e.lngLat.lat.toFixed(5)}`;
+    });
+
+    // Basic UI controls
+    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+    map.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }));
+
     // Optional: show current mouse coordinates for quick QA
     map.on('mousemove', (e) => {
       map.getCanvas().title = `${e.lngLat.lng.toFixed(5)}, ${e.lngLat.lat.toFixed(5)}`;
@@ -45,3 +110,4 @@
   </script>
 </body>
 </html>
+
