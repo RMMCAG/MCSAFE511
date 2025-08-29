@@ -39,7 +39,7 @@
       <label class="chip"><input type="checkbox" id="flt-thunder" checked> Thunderstorm</label>
       <label class="chip"><input type="checkbox" id="flt-snow" checked> Snow/Winter</label>
     </div>
-    <div class="subtle" style="margin-top:.25rem">Data: <a href="https://api.weather.gov/" target="_blank" rel="noopener">NWS</a> (alerts), <a href="https://radar.weather.gov/" target="_blank" rel="noopener">NWS Radar</a>, <a href="https://aviationweather.gov/data/api/" target="_blank" rel="noopener">AWC METAR</a>. Updates ~5 minutes.</div>
+    <div class="subtle" style="margin-top:.25rem">Data: <a href="https://api.weather.gov/" target="_blank" rel="noopener">NWS</a> (alerts), <a href="https://radar.weather.gov/" target="_blank" rel="noopener">Radar</a>, <a href="https://aviationweather.gov/data/api/" target="_blank" rel="noopener">AWC METAR</a>. Updates ~5 minutes. <span id="status-badges"></span></div>
     <div style="margin-top:.4rem">
       <div><span class="legend-swatch" style="background:#0ea5e9"></span> Fog</div>
       <div><span class="legend-swatch" style="background:#f97316"></span> Thunderstorm</div>
@@ -79,7 +79,10 @@
 
     // NOAA Radar (ArcGIS MapServer tiles)
     // Use nowCOAST public tiled radar (CORS-friendly)
-    const RADAR_TILES = 'https://nowcoast.noaa.gov/arcgis/rest/services/nowcoast/radar_meteo_imagery_nexrad/MapServer/tile/{z}/{y}/{x}';
+    // Primary: Iowa State Mesonet cached NEXRAD tiles (very reliable)
+    const RADAR_TILES = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::USCOMP-N0Q-1/{z}/{x}/{y}.png';
+    // Fallback: nowCOAST public tiles
+    const RADAR_TILES_FALLBACK = 'https://nowcoast.noaa.gov/arcgis/rest/services/nowcoast/radar_meteo_imagery_nexrad/MapServer/tile/{z}/{y}/{x}';
 
     // AWC METAR API (proxied through WORKER to avoid CORS)
     function metarUrlForBounds(bounds) {
@@ -87,8 +90,10 @@
       const south = bounds[0][1].toFixed(4);
       const east = bounds[1][0].toFixed(4);
       const north = bounds[1][1].toFixed(4);
-      // FAA/NWS ADDS GeoJSON endpoint (stable schema)
+      // Direct ADDS GeoJSON (CORS-enabled)
       const base = `https://aviationweather.gov/adds/dataserver_current/httpparam?dataSource=metars&requestType=geojson&hoursBeforeNow=3&minLon=${west}&minLat=${south}&maxLon=${east}&maxLat=${north}`;
+      return base;
+    }&minLat=${south}&maxLon=${east}&maxLat=${north}`;
       return `${WORKER}/?src=${encodeURIComponent(base)}`;
     }
 
@@ -132,8 +137,25 @@
       map.addLayer({ id: 'satellite', type: 'raster', source: 'esri', layout: { visibility: 'none' } });
 
       // Radar source/layer (beneath traffic layers)
-      map.addSource('nws-radar', { type: 'raster', tiles: [RADAR_TILES], tileSize: 256, attribution: 'NOAA/NWS MRMS' });
-      map.addLayer({ id: 'nws-radar', type: 'raster', source: 'nws-radar', paint: { 'raster-opacity': 0.7 } }, 'county-outline');
+      function ensureRadar(onFallback = false) {
+        try {
+          const srcId = 'nws-radar';
+          const tiles = onFallback ? RADAR_TILES_FALLBACK : RADAR_TILES;
+          if (map.getSource(srcId)) map.removeSource(srcId);
+          map.addSource(srcId, { type: 'raster', tiles: [tiles], tileSize: 256, attribution: 'NOAA/NWS, Iowa State Mesonet' });
+          if (!map.getLayer('nws-radar')) {
+            map.addLayer({ id: 'nws-radar', type: 'raster', source: srcId, paint: { 'raster-opacity': 0.7 } }, 'county-outline');
+          }
+        } catch (e) { console.error('Radar init error', e); }
+      }
+      ensureRadar();
+      map.on('error', (e) => {
+        if (String(e && e.error && e.error.message || '').includes('HTTP') && !map.__radarTriedFallback) {
+          map.__radarTriedFallback = true;
+          console.warn('Radar tiles failing, switching to fallback');
+          ensureRadar(true);
+        }
+      });
 
       // =====================
       // 3) DATA LAYER HELPERS
@@ -323,6 +345,8 @@
             map.on('mouseleave', lyrId, () => map.getCanvas().style.cursor = '');
           }
           console.log('METAR visibility stations:', features.length);
+          const st = document.getElementById('status-badges');
+          if (st) st.innerHTML = `<span class='chip'>METAR: ${features.length}</span> <span class='chip'>${new Date().toLocaleTimeString()}</span>`;
         } catch (err) { console.error('METAR visibility failed:', err); }
       }
       loadMetarVisibility();
