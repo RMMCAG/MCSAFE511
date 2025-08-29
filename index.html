@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Merced County 511 Prototype — Enhanced</title>
+  <title>Merced County 511 Prototype — USGS Added</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="https://unpkg.com/maplibre-gl@3.5.2/dist/maplibre-gl.css" rel="stylesheet" />
   <style>
@@ -34,12 +34,14 @@
     <div class="row"><input type="checkbox" id="chk-nws" checked><label for="chk-nws">NWS Alerts (polygons)</label></div>
     <div class="row"><input type="checkbox" id="chk-fog" checked><label for="chk-fog">Dense Fog Advisories</label></div>
     <div class="row"><input type="checkbox" id="chk-metar" checked><label for="chk-metar">Visibility (METAR, mi)</label></div>
+    <div class="row"><input type="checkbox" id="chk-usgs" checked><label for="chk-usgs">USGS Streamgages (stage & flow)</label></div>
     <div class="legend">
       <span><i class="k" style="background:#10b981"></i>CCTV</span>
       <span><i class="k" style="background:#6366f1"></i>CMS</span>
       <span><i class="k" style="background:#f59e0b"></i>CHP</span>
       <span><i class="k" style="background:#dc2626"></i>LCS</span>
       <span><i class="k" style="background:#1f2937"></i>Fog</span>
+      <span><i class="k" style="background:#14b8a6"></i>USGS</span>
     </div>
   </div>
 
@@ -71,6 +73,9 @@
     // NWS APIs (public domain)
     const NWS_ALERTS_BASE = 'https://api.weather.gov/alerts';
     const NWS_STATIONS = 'https://api.weather.gov/stations';
+
+    // USGS NWIS (public domain)
+    const USGS_IV = 'https://waterservices.usgs.gov/nwis/iv/';
 
     // Bounds / view
     const MERCED_CENTER = [-120.48, 37.30];
@@ -192,7 +197,6 @@
           if (!listResp.ok) throw new Error('Stations list error');
           const list = await listResp.json();
           const feats = list.features || [];
-          // Limit concurrent fetches to keep it light
           const batches = [];
           for (const st of feats) {
             const id = st.properties.stationIdentifier;
@@ -216,6 +220,57 @@
         } catch (e) { console.error('METAR visibility failed', e); }
       }
 
+      // ---- USGS NWIS real-time streamgages (stage & discharge)
+      async function addUsgsGages() {
+        try {
+          const [w,s] = VIEW_BOUNDS[0]; const [e,n] = VIEW_BOUNDS[1];
+          const params = new URLSearchParams({
+            format: 'json',
+            parameterCd: '00065,00060', // 00065=gauge height, 00060=discharge
+            bBox: `${w},${s},${e},${n}`,
+            siteStatus: 'active'
+          });
+          const url = `${USGS_IV}?${params.toString()}`;
+          const resp = await fetch(url, { cache: 'no-store' });
+          if (!resp.ok) throw new Error('USGS IV HTTP ' + resp.status);
+          const iv = await resp.json();
+
+          const sites = new Map();
+          for (const ts of (iv.value?.timeSeries || [])) {
+            const site = ts.sourceInfo?.siteCode?.[0]?.value;
+            const name = ts.sourceInfo?.siteName;
+            const coords = ts.sourceInfo?.geoLocation?.geogLocation;
+            const parm = ts.variable?.variableCode?.[0]?.value; // '00065' or '00060'
+            const val = ts.values?.[0]?.value?.[0];
+            if (!site || !coords || !val) continue;
+            if (!sites.has(site)) sites.set(site, { site, name, lng: +coords.longitude, lat: +coords.latitude, stage_ft: null, flow_cfs: null, time: val.dateTime });
+            const rec = sites.get(site);
+            if (parm === '00065') { rec.stage_ft = parseFloat(val.value); rec.time = val.dateTime || rec.time; }
+            if (parm === '00060') { rec.flow_cfs = parseFloat(val.value); rec.time = val.dateTime || rec.time; }
+          }
+
+          const features = Array.from(sites.values()).map(r => ({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [r.lng, r.lat] },
+            properties: { site: r.site, name: r.name, stage_ft: r.stage_ft, flow_cfs: r.flow_cfs, time: r.time, url: `https://waterdata.usgs.gov/monitoring-location/${r.site}/#parameterCode=00065&period=P7D` }
+          }));
+
+          const gj = { type: 'FeatureCollection', features };
+          const src = 'usgs-src';
+          if (map.getSource(src)) map.removeSource(src);
+          map.addSource(src, { type: 'geojson', data: gj, cluster: true, clusterRadius: 40 });
+
+          map.addLayer({ id: 'usgs-clusters', type: 'circle', source: src, filter: ['has','point_count'], paint: { 'circle-color': '#14b8a6', 'circle-radius': ['interpolate',['linear'],['get','point_count'], 2, 12, 100, 22], 'circle-stroke-color':'#fff', 'circle-stroke-width':1 } });
+          map.addLayer({ id: 'usgs-count', type: 'symbol', source: src, filter: ['has','point_count'], layout: { 'text-field': ['get','point_count_abbreviated'], 'text-size': 12 }, paint: { 'text-color': '#fff' } });
+
+          map.addLayer({ id: 'usgs-lyr', type: 'circle', source: src, filter: ['!', ['has','point_count']], paint: {
+            'circle-radius': ["interpolate", ["linear"], ["zoom"], 6, 3, 10, 5, 14, 8],
+            'circle-color': [ 'interpolate', ['linear'], ['coalesce', ['get','flow_cfs'], 0], 0, '#a7f3d0', 100, '#34d399', 1000, '#10b981', 5000, '#047857' ],
+            'circle-stroke-width': 1, 'circle-stroke-color': '#fff'
+          }});
+        } catch (e) { console.error('USGS gages failed', e); }
+      }
+
       // Load initial layers
       addCctv();
       addKmlLayer(QK.chp, 'chp', '#f59e0b', false);
@@ -223,6 +278,7 @@
       addKmlLayer(QK.cms, 'cms', '#6366f1', false);
       addNwsAlerts();
       addMetarVisibility();
+      addUsgsGages();
 
       // =====================
       // 4) TOGGLES
@@ -235,12 +291,12 @@
         { chk: 'chk-nws',  layers: ['nws-alerts-fill','nws-alerts-outline'], loader: addNwsAlerts },
         { chk: 'chk-fog',  layers: ['fog-lyr'], loader: addNwsAlerts },
         { chk: 'chk-metar', layers: ['metar-vis-lyr'], loader: addMetarVisibility },
+        { chk: 'chk-usgs', layers: ['usgs-clusters','usgs-count','usgs-lyr'], loader: addUsgsGages },
       ];
       for (const t of toggles) {
         const el = document.getElementById(t.chk);
         el?.addEventListener('change', () => {
           const visible = el.checked;
-          // If layer not added yet and user enables, (re)load it
           const haveAny = t.layers.some(id => map.getLayer(id));
           if (!haveAny && visible) { t.loader(); return; }
           for (const id of t.layers) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
@@ -250,7 +306,7 @@
       // =====================
       // 5) OVERLAP HANDLING — click picker
       // =====================
-      const CLICK_LAYERS = ['cctv-lyr','cms-lyr','chp-lyr','lcs-lyr','nws-alerts-fill','fog-lyr','metar-vis-lyr'];
+      const CLICK_LAYERS = ['cctv-lyr','cms-lyr','chp-lyr','lcs-lyr','nws-alerts-fill','fog-lyr','metar-vis-lyr','usgs-lyr'];
 
       function htmlForFeature(f) {
         const id = f.layer?.id || '';
@@ -279,6 +335,10 @@
         if (id === 'metar-vis-lyr') {
           return `<div><strong>Visibility</strong><br>${Number(p.visMi).toFixed(1)} mi — ${p.cond || ''}<br><small>${p.id} • ${new Date(p.time).toLocaleString()}</small><br><pre style='white-space:pre-wrap'>${p.raw || ''}</pre></div>`;
         }
+        if (id === 'usgs-lyr') {
+          const u = p.url ? `<a href='${p.url}' target='_blank' rel='noopener'>Open USGS site</a>` : '';
+          return `<div><strong>${p.name || 'USGS Gage'}</strong><br>Site: ${p.site || ''}<br>Stage: ${p.stage_ft != null ? Number(p.stage_ft).toFixed(2) + ' ft' : '—'}<br>Flow: ${p.flow_cfs != null ? Math.round(p.flow_cfs) + ' cfs' : '—'}<br><small>${p.time ? new Date(p.time).toLocaleString() : ''}</small><div style='margin-top:6px'>${u}</div></div>`;
+        }
         return '<em>Feature</em>';
       }
 
@@ -291,6 +351,7 @@
         if (id === 'lcs-lyr') return `LCS — ${p.name || 'Closure'}`;
         if (id === 'nws-alerts-fill' || id === 'fog-lyr') return `NWS — ${p.event || 'Alert'}`;
         if (id === 'metar-vis-lyr') return `METAR — ${p.id || 'Station'}`;
+        if (id === 'usgs-lyr') return `USGS — ${p.name || p.site || 'Gage'}`;
         return 'Feature';
       }
 
@@ -305,7 +366,6 @@
         const radius = 8; // px search radius
         const feats = map.queryRenderedFeatures([[e.point.x - radius, e.point.y - radius],[e.point.x + radius, e.point.y + radius]], { layers: CLICK_LAYERS.filter(id => map.getLayer(id)) });
         if (!feats.length) return;
-        // If clicked a cluster: zoom into it
         const cl = feats.find(f => /-clusters$/.test(f.layer.id));
         if (cl && map.getSource(cl.layer.source).type === 'geojson') {
           const src = map.getSource(cl.layer.source);
@@ -317,11 +377,7 @@
         }
         const pointFeats = feats.filter(f => !/-clusters$/.test(f.layer.id) && f.geometry.type === 'Point' || f.layer.id === 'lcs-lyr' || f.layer.id === 'nws-alerts-fill' || f.layer.id === 'fog-lyr');
         if (pointFeats.length === 1) { showPopupForFeature(pointFeats[0], e.lngLat); return; }
-
-        // Multiple features: show a chooser
-        const items = pointFeats.slice(0, 8).map((f, i) => {
-          return `<button data-idx="${i}">${titleForFeature(f)}</button>`;
-        }).join('');
+        const items = pointFeats.slice(0, 8).map((f, i) => `<button data-idx="${i}">${titleForFeature(f)}</button>`).join('');
         const container = document.createElement('div');
         container.className = 'popup-list';
         container.innerHTML = `<strong>Choose an item here:</strong>${items}`;
