@@ -78,7 +78,8 @@
     const NWS_ALERTS = 'https://api.weather.gov/alerts/active?area=CA';
 
     // NOAA Radar (ArcGIS MapServer tiles)
-    const RADAR_TILES = 'https://mapservices.weather.noaa.gov/eventdriven/rest/services/radar/radar_base_reflectivity/MapServer/tile/{z}/{y}/{x}';
+    // Use nowCOAST public tiled radar (CORS-friendly)
+    const RADAR_TILES = 'https://nowcoast.noaa.gov/arcgis/rest/services/nowcoast/radar_meteo_imagery_nexrad/MapServer/tile/{z}/{y}/{x}';
 
     // AWC METAR API (proxied through WORKER to avoid CORS)
     function metarUrlForBounds(bounds) {
@@ -86,7 +87,8 @@
       const south = bounds[0][1].toFixed(4);
       const east = bounds[1][0].toFixed(4);
       const north = bounds[1][1].toFixed(4);
-      const base = `https://aviationweather.gov/api/data/metar?bbox=${west},${south},${east},${north}&hours=3&format=geojson`;
+      // FAA/NWS ADDS GeoJSON endpoint (stable schema)
+      const base = `https://aviationweather.gov/adds/dataserver_current/httpparam?dataSource=metars&requestType=geojson&hoursBeforeNow=3&minLon=${west}&minLat=${south}&maxLon=${east}&maxLat=${north}`;
       return `${WORKER}/?src=${encodeURIComponent(base)}`;
     }
 
