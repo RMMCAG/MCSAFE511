@@ -78,23 +78,25 @@
 
     // NWS & METAR
     const NWS_ALERTS_BASE = 'https://api.weather.gov/alerts';
-    const NWS_STATIONS = 'https://api.weather.gov/stations';
+    const NWS_STATIONS = 'https://api.weather.gov/stations'; // note: some queries require specific params; see addMetar/addNwsAlerts fallbacks
 
     // USGS
     const USGS_IV = 'https://waterservices.usgs.gov/nwis/iv/';
 
     // Transit feeds
-    const FEEDS = {
-      thebus: {
-        gtfsZip: 'https://thebuslive.com/gtfs',
-        rtVehicles: 'https://thebuslive.com/gtfs-rt/vehiclepositions',
-        color: '#0ea5e9'
-      },
-      yarts: {
-        gtfsZip: 'https://data.trilliumtransit.com/gtfs/yosemite-ca-us/yosemite-ca-us.zip',
-        color: '#7c3aed'
-      }
-    };
+    $1
+
+    // ---- helpers for CORS + fetching
+    const prox = (u) => `${WORKER}/?src=${encodeURIComponent(u)}`;
+    async function fetchJSON(url, opts={}){
+      try { const r = await fetch(url, opts); if (!r.ok) { console.warn('fetchJSON not ok', url, r.status); return null; } return await r.json(); }
+      catch (e) { console.warn('fetchJSON failed', url, e); return null; }
+    }
+
+    // ---- override feeds via proxy to avoid CORS on GitHub Pages
+    FEEDS.thebus.gtfsZip = prox('https://data.trilliumtransit.com/gtfs/mercedthebus-ca-us/mercedthebus-ca-us.zip');
+    FEEDS.thebus.rtVehicles = prox('https://thebuslive.com/gtfs-rt/vehiclepositions');
+    FEEDS.yarts.gtfsZip = prox('https://data.trilliumtransit.com/gtfs/yosemite-ca-us/yosemite-ca-us.zip');
 
     // Bounds / view
     const MERCED_CENTER = [-120.48, 37.30];
@@ -145,16 +147,41 @@
 
       // --- Weather layers (same behavior as prior build)
       (async function addNwsAlerts(){
-        try{ const bbox=VIEW_BOUNDS.flat().join(','); const u=`${NWS_ALERTS_BASE}?status=actual&message_type=alert&bbox=${bbox}`; const gj=await (await fetch(u,{headers:{'Accept':'application/geo+json'},cache:'no-store'})).json(); map.addSource('nws-alerts-src',{type:'geojson',data:gj});
-          map.addLayer({ id:'nws-alerts-fill', type:'fill', source:'nws-alerts-src', paint:{ 'fill-color':['match',['get','event'],'Dense Fog Advisory','#111827','Flood Warning','#86198f','Flood Advisory','#a21caf','Flash Flood Warning','#7c3aed','#6b7280'], 'fill-opacity':0.25 }});
-          map.addLayer({ id:'nws-alerts-outline', type:'line', source:'nws-alerts-src', paint:{ 'line-color':['match',['get','event'],'Dense Fog Advisory','#111827','Flood Warning','#86198f','Flood Advisory','#a21caf','Flash Flood Warning','#7c3aed','#6b7280'], 'line-width':1.5 } });
-          map.addLayer({ id:'fog-lyr', type:'symbol', source:'nws-alerts-src', filter:['==',['get','event'],'Dense Fog Advisory'], layout:{'text-field':'Fog Adv.','text-size':12,'text-offset':[0,1]} });
-        }catch(e){console.error(e)} })();
+        // Use alerts/active with area=CA (bbox param often 400s); client filters to our VIEW_BOUNDS
+        const url = `${NWS_ALERTS_BASE}/active?area=CA&status=actual&message_type=alert`;
+        const gj = await fetchJSON(url, { headers: { 'Accept':'application/geo+json' }, cache:'no-store' });
+        if (!gj || !gj.features) { console.warn('NWS alerts skipped'); return; }
+        // filter features whose bbox or geometry intersects our view bounds
+        const [w,s] = VIEW_BOUNDS[0]; const [e,n] = VIEW_BOUNDS[1];
+        const boxIntersects = (fb) => !(fb[0] > e || fb[2] < w || fb[1] > n || fb[3] < s);
+        const featBbox = (f) => f?.bbox || (f.geometry && f.geometry.type === 'Polygon' ? f.geometry.coordinates[0].reduce((b,[x,y])=>[[Math.min(b[0][0],x),Math.min(b[0][1],y)],[Math.max(b[1][0],x),Math.max(b[1][1],y)]],[[Infinity,Infinity],[-Infinity,-Infinity]]).flat() : [-180,-90,180,90]);
+        gj.features = gj.features.filter(f => boxIntersects(featBbox(f)));
+        const src = 'nws-alerts-src'; if (map.getSource(src)) map.removeSource(src);
+        map.addSource(src, { type:'geojson', data: gj });
+        if (!map.getLayer('nws-alerts-fill')) map.addLayer({ id:'nws-alerts-fill', type:'fill', source:src, paint:{ 'fill-color':['match',['get','event'],'Dense Fog Advisory','#111827','Flood Warning','#86198f','Flood Advisory','#a21caf','Flash Flood Warning','#7c3aed','#6b7280'], 'fill-opacity':0.25 }});
+        if (!map.getLayer('nws-alerts-outline')) map.addLayer({ id:'nws-alerts-outline', type:'line', source:src, paint:{ 'line-color':['match',['get','event'],'Dense Fog Advisory','#111827','Flood Warning','#86198f','Flood Advisory','#a21caf','Flash Flood Warning','#7c3aed','#6b7280'], 'line-width':1.5 } });
+        if (!map.getLayer('fog-lyr')) map.addLayer({ id:'fog-lyr', type:'symbol', source:src, filter:['==',['get','event'],'Dense Fog Advisory'], layout:{'text-field':'Fog Adv.','text-size':12,'text-offset':[0,1]} });
+      })();
 
       (async function addMetar(){
-        try{ const [w,s]=VIEW_BOUNDS[0]; const [e,n]=VIEW_BOUNDS[1]; const list=await (await fetch(`${NWS_STATIONS}?bbox=${w},${s},${e},${n}`,{cache:'no-store'})).json(); const feats=list.features||[]; const out=[]; for(const st of feats){ const id=st.properties.stationIdentifier; const [lng,lat]=st.geometry.coordinates; if(!id) continue; try{ const o=await (await fetch(`${NWS_STATIONS}/${id}/observations/latest`,{cache:'no-store'})).json(); const visM=o.properties?.visibility?.value; if(visM==null) continue; out.push({type:'Feature',geometry:{type:'Point',coordinates:[lng,lat]},properties:{id,visMi:visM/1609.344,cond:o.properties.textDescription||'',time:o.properties.timestamp,raw:o.properties.rawMessage||''}}); }catch{} }
-          map.addSource('metar-vis-src',{type:'geojson',data:{type:'FeatureCollection',features:out}}); map.addLayer({ id:'metar-vis-lyr', type:'symbol', source:'metar-vis-src', layout:{'text-field':['concat',['to-string',['round',['get','visMi']]],' mi'],'text-size':12,'text-offset':[0,-1]}, paint:{'text-halo-color':'#fff','text-halo-width':1} });
-        }catch(e){console.error(e)} })();
+        // stations?bbox often 400s; use state=CA and client-filter to VIEW_BOUNDS, then fetch /observations/latest per station
+        const list = await fetchJSON(`${NWS_STATIONS}?state=CA`, { cache:'no-store' });
+        if (!list || !list.features) { console.warn('NWS stations skipped'); return; }
+        const [w,s] = VIEW_BOUNDS[0]; const [e,n] = VIEW_BOUNDS[1];
+        const inBox = ([lng,lat]) => (lng>=w && lng<=e && lat>=s && lat<=n);
+        const feats = list.features.filter(st => st.geometry && inBox(st.geometry.coordinates));
+        const batches = feats.map(st => {
+          const id = st.properties.stationIdentifier; const [lng,lat] = st.geometry.coordinates; if (!id) return null;
+          return fetchJSON(`${NWS_STATIONS}/${id}/observations/latest`, { cache:'no-store' }).then(o => {
+            if (!o || !o.properties) return null; const visM=o.properties.visibility && o.properties.visibility.value; if (visM==null) return null;
+            return { type:'Feature', geometry:{ type:'Point', coordinates:[lng,lat] }, properties:{ id, visMi: visM/1609.344, cond:o.properties.textDescription||'', raw:o.properties.rawMessage||'', time:o.properties.timestamp } };
+          }).catch(()=>null);
+        }).filter(Boolean);
+        const results = (await Promise.all(batches)).filter(Boolean);
+        const src='metar-vis-src'; if (map.getSource(src)) map.removeSource(src);
+        map.addSource(src, { type:'geojson', data:{ type:'FeatureCollection', features: results } });
+        if (!map.getLayer('metar-vis-lyr')) map.addLayer({ id:'metar-vis-lyr', type:'symbol', source:src, layout:{ 'text-field':['concat',['to-string',['round',['get','visMi']]],' mi'], 'text-size':12, 'text-offset':[0,-1] }, paint:{ 'text-halo-color':'#fff', 'text-halo-width':1, 'text-color':'#0f172a' } });
+      })();
 
       // --- USGS streamgages
       (async function addUSGS(){
@@ -199,17 +226,28 @@
         try{
           const root = protobuf.parse(GTFS_RT_PROTO).root;
           const FeedMessage = root.lookupType('transit_realtime.FeedMessage');
-          const buf = await (await fetch(url, { cache:'no-store' })).arrayBuffer();
-          const msg = FeedMessage.decode(new Uint8Array(buf));
+          let buf; try { buf = await (await fetch(url, { cache:'no-store' })).arrayBuffer(); }
+          catch(e){ console.warn('RT fetch failed, trying .pb', e); try{ buf = await (await fetch(url.endsWith('.pb') ? url : url + '.pb', { cache:'no-store' })).arrayBuffer(); } catch(e2){ console.error('RT fetch failed (pb)', e2); return; } }
+          let msg; try{ msg = FeedMessage.decode(new Uint8Array(buf)); } catch(e){ console.error('RT decode failed', e); return; }
           const feats = [];
-          for(const ent of msg.entity){ if(!ent.vehicle || !ent.vehicle.position) continue; const pos = ent.vehicle.position; feats.push({ type:'Feature', geometry:{ type:'Point', coordinates:[pos.longitude, pos.latitude] }, properties:{ id: ent.id, label: ent.vehicle?.vehicle?.label || ent.vehicle?.vehicle?.id || '', route: ent.vehicle?.trip?.route_id || '', trip: ent.vehicle?.trip?.trip_id || '', bearing: pos.bearing||null, speed: pos.speed||null, time: ent.vehicle.timestamp? new Date(Number(ent.vehicle.timestamp)*1000).toISOString(): null } }); }
-          const src=`${idPrefix}-rt-src`;
-          if(map.getSource(src)) map.removeSource(src);
-          map.addSource(src,{ type:'geojson', data:{ type:'FeatureCollection', features:feats }});
-          if(!map.getLayer(`${idPrefix}-rt-lyr`)){
-            map.addLayer({ id:`${idPrefix}-rt-lyr`, type:'symbol', source:src, layout:{ 'icon-image':'marker-15', 'icon-rotate':['coalesce',['get','bearing'],0], 'icon-rotation-alignment':'map', 'text-field':['get','label'], 'text-size':12, 'text-offset':[0,1.2] }, paint:{ 'text-halo-color':'#fff','text-halo-width':1 } });
+          for(const ent of (msg.entity||[])){
+            const vp = ent.vehicle; const pos = vp && vp.position; if (!pos) continue;
+            feats.push({ type:'Feature', geometry:{ type:'Point', coordinates:[pos.longitude, pos.latitude] }, properties:{ id: ent.id, label: vp?.vehicle?.label || vp?.vehicle?.id || '', route: vp?.trip?.route_id || '', trip: vp?.trip?.trip_id || '', bearing: pos.bearing||null, speed: pos.speed||null, time: vp.timestamp? new Date(Number(vp.timestamp)*1000).toISOString(): null } });
           }
-        }catch(e){ console.error('GTFS‑RT decode failed', idPrefix, e); }
+          console.log(`[RT ${idPrefix}] vehicles decoded:`, feats.length);
+          const src=`${idPrefix}-rt-src`;
+          const data = { type:'FeatureCollection', features: feats };
+          if (map.getSource(src)) {
+            // just update data; don't remove layers/sources
+            const s = map.getSource(src); if (s && s.setData) s.setData(data);
+          } else {
+            map.addSource(src,{ type:'geojson', data });
+            // Use circles to avoid sprite dependency
+            map.addLayer({ id:`${idPrefix}-rt-lyr`, type:'circle', source:src, paint:{ 'circle-radius':5, 'circle-color': color || '#0ea5e9', 'circle-stroke-color':'#fff', 'circle-stroke-width':1 } });
+          }
+        }catch(e){ console.error('GTFS‑RT update failed', idPrefix, e); }
+      }
+              }catch(e){ console.error('GTFS‑RT decode failed', idPrefix, e); }
       }
 
       // initial RT pull + simple refresh interval
