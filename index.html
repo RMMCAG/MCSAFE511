@@ -37,8 +37,12 @@
     const WORKER = 'https://restless-dream-d169.windman007.workers.dev';
 
     // ArcGIS CCTV FeatureServer (GeoJSON works cross-origin)
-    const CCTV_URL = 'https://caltrans-gis.dot.ca.gov/arcgis/rest/services/CHhighway/CCTV/FeatureServer/0/query?where=1%3D1&outFields=OBJECTID,locationName,currentImageURL,county,route&returnGeometry=true&f=geojson';
-
+    const CCTV_URL =
+  'https://caltrans-gis.dot.ca.gov/arcgis/rest/services/CHhighway/CCTV/FeatureServer/0/query'
+  + '?where=' + encodeURIComponent("county IN ('Merced','Stanislaus','Madera','Mariposa')")
+  + '&outFields=' + encodeURIComponent('OBJECTID,locationName,currentImageURL,county,route')
+  + '&returnGeometry=true&f=geojson';
+    
     // QuickMap KML endpoints (proxied through WORKER)
     const QK = {
       chp: `${WORKER}/?src=${encodeURIComponent('https://quickmap.dot.ca.gov/data/chp-only.kml')}`,
