@@ -2,9 +2,12 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Merced County 511 — Clean Build</title>
+  <title>Merced County 511 — Clean Build v2</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="https://unpkg.com/maplibre-gl@3.5.2/dist/maplibre-gl.css" rel="stylesheet" />
+  <!-- Inline favicon to prevent 404s on GH Pages -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%230ea5e9'/%3E%3Ctext x='50' y='68' text-anchor='middle' font-family='system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif' font-size='62' fill='white'%3E511%3C/text%3E%3C/svg%3E">
+  <meta name="theme-color" content="#0ea5e9">
   <style>
     :root { color-scheme: light dark; }
     html, body { height: 100%; margin: 0; padding: 0; }
@@ -96,42 +99,28 @@
       }
     };
 
-    // ---- helpers for CORS + fetching
+    // Proxy helper (CORS)
     const prox = (u) => `${WORKER}/?src=${encodeURIComponent(u)}`;
-    async function fetchJSON(url, opts={}){
-      try { const r = await fetch(url, opts); if (!r.ok) return null; return await r.json(); }
-      catch { return null; }
-    }
-
-    // Use proxy to avoid CORS from GitHub Pages
     FEEDS.thebus.gtfsZip = prox(FEEDS.thebus.gtfsZip);
     FEEDS.thebus.rtVehicles = prox(FEEDS.thebus.rtVehicles);
     FEEDS.yarts.gtfsZip = prox(FEEDS.yarts.gtfsZip);
 
-    // Bounds / view
     const MERCED_CENTER = [-120.48, 37.30];
-    const VIEW_BOUNDS = [[-122.30, 36.60], [-119.00, 37.90]]; // [W,S],[E,N]
+    const VIEW_BOUNDS = [[-122.30, 36.60], [-119.00, 37.90]];
 
     // =====================
     // 2) MAP
     // =====================
     const map = new maplibregl.Map({
-      container: 'map',
-      style: 'https://demotiles.maplibre.org/style.json',
-      center: MERCED_CENTER,
-      zoom: 9,
-      minZoom: 7.8,
-      maxZoom: 18,
-      maxBounds: VIEW_BOUNDS,
-      attributionControl: true
+      container: 'map', style: 'https://demotiles.maplibre.org/style.json',
+      center: MERCED_CENTER, zoom: 9, minZoom: 7.8, maxZoom: 18, maxBounds: VIEW_BOUNDS, attributionControl: true
     });
-
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
     map.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }));
-    map.dragRotate.disable();
-    map.touchZoomRotate.disableRotation();
-
+    map.dragRotate.disable(); map.touchZoomRotate.disableRotation();
     map.on('error', e => console.error('Map error:', e && e.error || e));
+
+    function fetchJSON(url, opts={}){ return fetch(url, opts).then(r => r.ok ? r.json() : null).catch(() => null); }
 
     map.on('load', () => {
       map.fitBounds(VIEW_BOUNDS, { padding: 40, duration: 0 });
@@ -140,9 +129,6 @@
       map.addSource('osm', { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, attribution: '© OpenStreetMap contributors' });
       map.addLayer({ id: 'osm', type: 'raster', source: 'osm' });
 
-      // =====================
-      // 3) DATA LAYERS
-      // =====================
       const addCircleClustered = (src, baseColor, idPrefix) => {
         if (!map.getLayer(`${idPrefix}-clusters`)) map.addLayer({ id: `${idPrefix}-clusters`, type: 'circle', source: src, filter: ['has','point_count'], paint: { 'circle-color': baseColor, 'circle-radius': ['interpolate',['linear'],['get','point_count'], 2,12, 100,22], 'circle-stroke-color':'#fff','circle-stroke-width':1 } });
         if (!map.getLayer(`${idPrefix}-count`)) map.addLayer({ id: `${idPrefix}-count`, type: 'symbol', source: src, filter: ['has','point_count'], layout: { 'text-field': ['get','point_count_abbreviated'], 'text-size': 12 }, paint: { 'text-color': '#fff' } });
@@ -156,9 +142,7 @@
           const data = await resp.json();
           for (const f of (data.features || [])) {
             const p = f.properties || {};
-            if (typeof p.currentImageURL === 'string' && p.currentImageURL.startsWith('http:')) {
-              p.currentImageURL = p.currentImageURL.replace(/^http:/, 'https:');
-            }
+            if (p.currentImageURL && p.currentImageURL.startsWith('http:')) p.currentImageURL = p.currentImageURL.replace(/^http:/, 'https:');
           }
           map.addSource('cctv-src', { type: 'geojson', data, cluster: true, clusterRadius: 40 });
           addCircleClustered('cctv-src', '#0ea5e9', 'cctv');
@@ -194,9 +178,8 @@
         const gj = await fetchJSON(url, { headers: { 'Accept':'application/geo+json' }, cache:'no-store' });
         if (!gj || !gj.features) return;
         const [w,s] = VIEW_BOUNDS[0]; const [e,n] = VIEW_BOUNDS[1];
-        const boxIntersects = (fb) => !(fb[0] > e || fb[2] < w || fb[1] > n || fb[3] < s);
         const featBbox = (f) => f?.bbox || [-180,-90,180,90];
-        gj.features = gj.features.filter(f => boxIntersects(featBbox(f)));
+        gj.features = gj.features.filter(f => !(featBbox(f)[0] > e || featBbox(f)[2] < w || featBbox(f)[1] > n || featBbox(f)[3] < s));
         const src = 'nws-alerts-src';
         if (map.getSource(src)) map.removeSource(src);
         map.addSource(src, { type:'geojson', data: gj });
@@ -205,7 +188,7 @@
         if (!map.getLayer('fog-lyr')) map.addLayer({ id:'fog-lyr', type:'symbol', source:src, filter:['==',['get','event'],'Dense Fog Advisory'], layout:{'text-field':'Fog Adv.','text-size':12,'text-offset':[0,1]} });
       })();
 
-      // ---- METAR Visibility (stations?state=CA -> filter to bounds)
+      // ---- METAR Visibility
       ;(async function addMetar(){
         const list = await fetchJSON(`${NWS_STATIONS}?state=CA`, { cache:'no-store' });
         if (!list || !list.features) return;
@@ -227,33 +210,31 @@
 
       // ---- USGS streamgages
       ;(async function addUSGS(){
-        try{
-          const [w,s] = VIEW_BOUNDS[0]; const [e,n] = VIEW_BOUNDS[1];
-          const p = new URLSearchParams({ format:'json', parameterCd:'00065,00060', bBox:`${w},${s},${e},${n}`, siteStatus:'active' });
-          const iv = await fetchJSON(`${USGS_IV}?${p.toString()}`, { cache:'no-store' });
-          if (!iv) return;
-          const sites = new Map();
-          for (const ts of (iv.value?.timeSeries || [])){
-            const site = ts.sourceInfo?.siteCode?.[0]?.value;
-            const name = ts.sourceInfo?.siteName;
-            const g = ts.sourceInfo?.geoLocation?.geogLocation;
-            const parm = ts.variable?.variableCode?.[0]?.value;
-            const val = ts.values?.[0]?.value?.[0];
-            if (!site || !g || !val) continue;
-            if (!sites.has(site)) sites.set(site,{ site, name, lng:+g.longitude, lat:+g.latitude, stage_ft:null, flow_cfs:null, time: val.dateTime });
-            const r = sites.get(site);
-            if (parm === '00065') r.stage_ft = parseFloat(val.value);
-            if (parm === '00060') r.flow_cfs = parseFloat(val.value);
-            r.time = val.dateTime || r.time;
-          }
-          const feats = [...sites.values()].map(r => ({ type:'Feature', geometry:{ type:'Point', coordinates:[r.lng,r.lat] }, properties:{ site:r.site, name:r.name, stage_ft:r.stage_ft, flow_cfs:r.flow_cfs, time:r.time, url:`https://waterdata.usgs.gov/monitoring-location/${r.site}/#parameterCode=00065&period=P7D` } }));
-          map.addSource('usgs-src',{ type:'geojson', data:{ type:'FeatureCollection', features: feats }, cluster:true, clusterRadius:40 });
-          addCircleClustered('usgs-src','#14b8a6','usgs');
-          map.addLayer({ id:'usgs-lyr', type:'circle', source:'usgs-src', filter:['!', ['has','point_count']], paint:{ 'circle-radius':["interpolate",["linear"],["zoom"],6,3,10,5,14,8], 'circle-color':['interpolate',['linear'],['coalesce',['get','flow_cfs'],0], 0,'#a7f3d0', 100,'#34d399', 1000,'#10b981', 5000,'#047857'], 'circle-stroke-width':1, 'circle-stroke-color':'#fff' } });
-        }catch(e){ console.error('USGS failed', e); }
+        const [w,s] = VIEW_BOUNDS[0]; const [e,n] = VIEW_BOUNDS[1];
+        const p = new URLSearchParams({ format:'json', parameterCd:'00065,00060', bBox:`${w},${s},${e},${n}`, siteStatus:'active' });
+        const iv = await fetchJSON(`${USGS_IV}?${p.toString()}`, { cache:'no-store' });
+        if (!iv) return;
+        const sites = new Map();
+        for (const ts of (iv.value?.timeSeries || [])){
+          const site = ts.sourceInfo?.siteCode?.[0]?.value;
+          const name = ts.sourceInfo?.siteName;
+          const g = ts.sourceInfo?.geoLocation?.geogLocation;
+          const parm = ts.variable?.variableCode?.[0]?.value;
+          const val = ts.values?.[0]?.value?.[0];
+          if (!site || !g || !val) continue;
+          if (!sites.has(site)) sites.set(site,{ site, name, lng:+g.longitude, lat:+g.latitude, stage_ft:null, flow_cfs:null, time: val.dateTime });
+          const r = sites.get(site);
+          if (parm === '00065') r.stage_ft = parseFloat(val.value);
+          if (parm === '00060') r.flow_cfs = parseFloat(val.value);
+          r.time = val.dateTime || r.time;
+        }
+        const feats = [...sites.values()].map(r => ({ type:'Feature', geometry:{ type:'Point', coordinates:[r.lng,r.lat] }, properties:{ site:r.site, name:r.name, stage_ft:r.stage_ft, flow_cfs:r.flow_cfs, time:r.time, url:`https://waterdata.usgs.gov/monitoring-location/${r.site}/#parameterCode=00065&period=P7D` } }));
+        map.addSource('usgs-src',{ type:'geojson', data:{ type:'FeatureCollection', features: feats }, cluster:true, clusterRadius:40 });
+        addCircleClustered('usgs-src','#14b8a6','usgs');
+        map.addLayer({ id:'usgs-lyr', type:'circle', source:'usgs-src', filter:['!', ['has','point_count']], paint:{ 'circle-radius':["interpolate",["linear"],["zoom"],6,3,10,5,14,8], 'circle-color':['interpolate',['linear'],['coalesce',['get','flow_cfs'],0], 0,'#a7f3d0', 100,'#34d399', 1000,'#10b981', 5000,'#047857'], 'circle-stroke-width':1, 'circle-stroke-color':'#fff' } });
       })();
 
-      // ---- GTFS Static (stops + shapes)
+      // ---- GTFS Static
       async function addGtfsStatic(idPrefix, zipUrl, color){
         const srcStops=`${idPrefix}-stops-src`; const srcShapes=`${idPrefix}-shapes-src`;
         try{
@@ -282,25 +263,18 @@
       addGtfsStatic('bus', FEEDS.thebus.gtfsZip, FEEDS.thebus.color);
       addGtfsStatic('yarts', FEEDS.yarts.gtfsZip, FEEDS.yarts.color);
 
-      // ---- GTFS‑RT Vehicle Positions
-      const GTFS_RT_PROTO = `syntax = "proto2";
-        package transit_realtime;
-        message FeedMessage { required FeedHeader header = 1; repeated FeedEntity entity = 2; }
-        message FeedHeader { required string gtfs_realtime_version = 1; optional Incrementality incrementality = 2 [default = FULL_DATASET]; optional uint64 timestamp = 3; enum Incrementality { FULL_DATASET = 0; DIFFERENTIAL = 1; } }
-        message FeedEntity { required string id = 1; optional bool is_deleted = 2 [default = false]; optional VehiclePosition vehicle = 3; }
-        message VehiclePosition { optional TripDescriptor trip = 1; optional VehicleDescriptor vehicle = 8; optional Position position = 2; optional uint64 timestamp = 5; optional int32 current_stop_sequence = 3; optional StopStatus current_status = 4 [default = IN_TRANSIT_TO]; enum StopStatus { INCOMING_AT = 0; STOPPED_AT = 1; IN_TRANSIT_TO = 2; } optional string stop_id = 7; }
-        message TripDescriptor { optional string trip_id = 1; optional string route_id = 5; }
-        message VehicleDescriptor { optional string id = 1; optional string label = 2; }
-        message Position { optional float latitude = 1; optional float longitude = 2; optional float bearing = 3; optional double speed = 4; }`;
+      // ---- GTFS‑RT Vehicles
+      const GTFS_RT_PROTO = `syntax = "proto2"; package transit_realtime; message FeedMessage { required FeedHeader header = 1; repeated FeedEntity entity = 2; } message FeedHeader { required string gtfs_realtime_version = 1; optional uint64 timestamp = 3; } message FeedEntity { required string id = 1; optional VehiclePosition vehicle = 3; } message VehiclePosition { optional TripDescriptor trip = 1; optional VehicleDescriptor vehicle = 8; optional Position position = 2; optional uint64 timestamp = 5; } message TripDescriptor { optional string trip_id = 1; optional string route_id = 5; } message VehicleDescriptor { optional string id = 1; optional string label = 2; } message Position { optional float latitude = 1; optional float longitude = 2; optional float bearing = 3; optional double speed = 4; }`;
 
       async function addGtfsRtVehicles(idPrefix, url, color){
         try {
           const root = protobuf.parse(GTFS_RT_PROTO).root;
           const FeedMessage = root.lookupType('transit_realtime.FeedMessage');
-          let buf;
-          try { buf = await (await fetch(url, { cache:'no-store' })).arrayBuffer(); }
-          catch { try { buf = await (await fetch(url.endsWith('.pb')? url : url + '.pb', { cache:'no-store' })).arrayBuffer(); } catch { return; } }
-          let msg; try { msg = FeedMessage.decode(new Uint8Array(buf)); } catch { return; }
+          // fetch via worker; if that fails, try .pb
+          let buf; try { buf = await (await fetch(url, { cache:'no-store' })).arrayBuffer(); } catch {}
+          if (!buf) { try { buf = await (await fetch(url.endsWith('.pb') ? url : url + '.pb', { cache:'no-store' })).arrayBuffer(); } catch {} }
+          if (!buf) { console.warn('No RT bytes fetched'); return; }
+          let msg; try { msg = FeedMessage.decode(new Uint8Array(buf)); } catch { console.warn('RT decode failed'); return; }
           const feats = [];
           for (const ent of (msg.entity || [])){
             const vp = ent.vehicle; const pos = vp && vp.position; if (!pos) continue;
@@ -310,19 +284,14 @@
           const data = { type:'FeatureCollection', features: feats };
           const have = map.getSource(src);
           if (have && have.setData) have.setData(data);
-          else {
-            map.addSource(src, { type:'geojson', data });
-            map.addLayer({ id:`${idPrefix}-rt-lyr`, type:'circle', source:src, paint:{ 'circle-radius':5, 'circle-color': color || '#0ea5e9', 'circle-stroke-color':'#fff', 'circle-stroke-width':1 } });
-          }
+          else { map.addSource(src, { type:'geojson', data }); map.addLayer({ id:`${idPrefix}-rt-lyr`, type:'circle', source:src, paint:{ 'circle-radius':5, 'circle-color': color || '#0ea5e9', 'circle-stroke-color':'#fff', 'circle-stroke-width':1 } }); }
         } catch (e) { console.error('GTFS‑RT update failed', idPrefix, e); }
       }
 
       async function refreshRt(){ await addGtfsRtVehicles('bus', FEEDS.thebus.rtVehicles, FEEDS.thebus.color); }
       refreshRt(); setInterval(refreshRt, 30000);
 
-      // =====================
-      // 4) TOGGLES
-      // =====================
+      // ---- TOGGLES
       const toggles = [
         { chk:'chk-cctv', layers:['cctv-clusters','cctv-count','cctv-lyr'] },
         { chk:'chk-chp', layers:['chp-clusters','chp-count','chp-lyr'] },
@@ -346,15 +315,13 @@
         });
       }
 
-      // =====================
-      // 5) OVERLAP CLICK PICKER
-      // =====================
+      // ---- OVERLAP CLICK PICKER (only real content layers, not cluster/count)
       const CLICK_LAYERS = ['cctv-lyr','cms-lyr','chp-lyr','lcs-lyr','nws-alerts-fill','fog-lyr','metar-vis-lyr','usgs-lyr','bus-stops-lyr','yarts-stops-lyr','bus-rt-lyr'];
 
-      function titleForFeature(f){ const id=f.layer?.id||''; const p=f.properties||{}; if(id==='bus-rt-lyr') return `The Bus — ${p.label||p.id||'Vehicle'}`; if(id==='bus-stops-lyr') return `The Bus — Stop ${p.stop_name||p.stop_id}`; if(id==='yarts-stops-lyr') return `YARTS — Stop ${p.stop_name||p.stop_id}`; if(id==='cctv-lyr') return `CCTV — ${p.locationName||'Camera'}`; if(id==='cms-lyr') return `CMS — ${p.name||'Sign'}`; if(id==='chp-lyr') return `CHP — ${p.name||'Incident'}`; if(id==='lcs-lyr') return `LCS — ${p.name||'Closure'}`; if(id==='nws-alerts-fill'||id==='fog-lyr') return `NWS — ${p.event||'Alert'}`; return 'Feature'; }
-      function htmlForFeature(f){ const id=f.layer?.id||''; const p=f.properties||{}; if(id==='bus-rt-lyr'){ return `<div><strong>The Bus — ${p.label||p.id||'Vehicle'}</strong><br>Route: ${p.route||'—'}<br>Trip: ${p.trip||'—'}<br>Bearing: ${p.bearing??'—'}<br>Speed: ${p.speed? (p.speed*2.237).toFixed(0)+' mph':'—'}<br><small>${p.time? new Date(p.time).toLocaleString(): ''}</small></div>`; } if(/-stops-lyr$/.test(id)){ return `<div><strong>${p.stop_name||'Stop'}</strong><br>ID: ${p.stop_id||''}</div>`; } if(id==='cctv-lyr'){ const url=p.currentImageURL||''; return `<div><strong>${p.locationName||'Camera'}</strong>${url? `<div style='margin-top:6px'><img src='${url}' style='max-width:320px;max-height:240px;border-radius:8px'></div>`:''}</div>`; } if(id==='nws-alerts-fill'||id==='fog-lyr'){ return `<div><strong>${p.event||'NWS Alert'}</strong><div>${p.headline||''}</div><div><small>${p.effective||''} → ${p.expires||''}</small></div></div>`; } if(id==='usgs-lyr'){ const u=p.url? `<a href='${p.url}' target='_blank' rel='noopener'>Open USGS site</a>`:''; return `<div><strong>${p.name||'USGS Gage'}</strong><br>Site: ${p.site||''}<br>Stage: ${p.stage_ft!=null? Number(p.stage_ft).toFixed(2)+' ft':'—'}<br>Flow: ${p.flow_cfs!=null? Math.round(p.flow_cfs)+' cfs':'—'}<br><small>${p.time? new Date(p.time).toLocaleString(): ''}</small><div style='margin-top:6px'>${u}</div></div>`; } return '<em>Feature</em>'; }
-      function showPopup(f, lngLat){ new maplibregl.Popup({maxWidth:'360px'}).setLngLat(lngLat).setHTML(htmlForFeature(f)).addTo(map); }
+      function titleForFeature(f){ const id=f.layer?.id||''; const p=f.properties||{}; if(id==='bus-rt-lyr') return `The Bus — ${p.label||p.id||'Vehicle'}`; if(id==='bus-stops-lyr') return `The Bus — Stop ${p.stop_name||p.stop_id}`; if(id==='yarts-stops-lyr') return `YARTS — Stop ${p.stop_name||p.stop_id}`; if(id==='cctv-lyr') return `CCTV — ${p.locationName||'Camera'}`; if(id==='cms-lyr') return `CMS — ${p.name||p.Title||'Sign'}`; if(id==='chp-lyr') return `CHP — ${p.name||p.Title||'Incident'}`; if(id==='lcs-lyr') return `LCS — ${p.name||p.Title||'Closure'}`; if(id==='nws-alerts-fill'||id==='fog-lyr') return `NWS — ${p.event||'Alert'}`; return 'Feature'; }
+      function htmlForFeature(f){ const id=f.layer?.id||''; const p=f.properties||{}; if(id==='bus-rt-lyr'){ return `<div><strong>The Bus — ${p.label||p.id||'Vehicle'}</strong><br>Route: ${p.route||'—'}<br>Trip: ${p.trip||'—'}<br>Bearing: ${p.bearing??'—'}<br>Speed: ${p.speed? (p.speed*2.237).toFixed(0)+' mph':'—'}<br><small>${p.time? new Date(p.time).toLocaleString(): ''}</small></div>`; } if(/-stops-lyr$/.test(id)){ return `<div><strong>${p.stop_name||'Stop'}</strong><br>ID: ${p.stop_id||''}</div>`; } if(id==='cctv-lyr'){ const url=p.currentImageURL||''; const where = [p.county, p.route].filter(Boolean).join(' · '); return `<div><strong>${p.locationName||'Camera'}</strong>${where? `<div>${where}</div>`:''}${url? `<div style='margin-top:6px'><img src='${url}' style='max-width:320px;max-height:240px;border-radius:8px'></div>`:''}</div>`; } if(id==='cms-lyr'||id==='chp-lyr'||id==='lcs-lyr'){ const title=p.name||p.Title||'Item'; const desc=p.description||p.Description||'<em>No details</em>'; return `<div><strong>${title}</strong><div style='max-width:320px'>${desc}</div>`; } if(id==='nws-alerts-fill'||id==='fog-lyr'){ return `<div><strong>${p.event||'NWS Alert'}</strong><div>${p.headline||''}</div><div><small>${p.effective||''} → ${p.expires||''}</small></div></div>`; } if(id==='usgs-lyr'){ const u=p.url? `<a href='${p.url}' target='_blank' rel='noopener'>Open USGS site</a>`:''; return `<div><strong>${p.name||'USGS Gage'}</strong><br>Site: ${p.site||''}<br>Stage: ${p.stage_ft!=null? Number(p.stage_ft).toFixed(2)+' ft':'—'}<br>Flow: ${p.flow_cfs!=null? Math.round(p.flow_cfs)+' cfs':'—'}<br><small>${p.time? new Date(p.time).toLocaleString(): ''}</small><div style='margin-top:6px'>${u}</div></div>`; } return '<em>Feature</em>'; }
 
+      function showPopup(f, lngLat){ new maplibregl.Popup({maxWidth:'360px'}).setLngLat(lngLat).setHTML(htmlForFeature(f)).addTo(map); }
       map.on('click', (e)=>{
         const r=8; const layers=CLICK_LAYERS.filter(id=>map.getLayer(id));
         const feats = map.queryRenderedFeatures([[e.point.x-r, e.point.y-r],[e.point.x+r, e.point.y+r]], { layers });
@@ -371,32 +338,17 @@
 
     // Basemap toggle
     (function addBasemapToggle(){
-      const btn = document.createElement('button');
-      btn.textContent = 'Satellite';
-      btn.className = 'maplibregl-ctrl maplibregl-ctrl-group ctrl-btn';
-      btn.onclick = () => {
-        const isSat = map.getLayoutProperty('satellite', 'visibility') !== 'none';
-        if (!map.getSource('esri')) {
-          map.addSource('esri', { type: 'raster', tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256 });
-          map.addLayer({ id: 'satellite', type: 'raster', source: 'esri', layout: { visibility: 'none' } });
-        }
-        map.setLayoutProperty('satellite', 'visibility', isSat ? 'none' : 'visible');
-        map.setLayoutProperty('osm', 'visibility', isSat ? 'visible' : 'none');
-        btn.textContent = isSat ? 'Satellite' : 'Streets';
-      };
-      const corner = document.querySelector('.maplibregl-ctrl-top-right') || document.body;
-      const wrap = document.createElement('div'); wrap.className = 'maplibregl-ctrl maplibregl-ctrl-group'; wrap.appendChild(btn); corner.appendChild(wrap);
+      const btn=document.createElement('button'); btn.textContent='Satellite'; btn.className='maplibregl-ctrl maplibregl-ctrl-group ctrl-btn';
+      btn.onclick=()=>{ const isSat = map.getLayoutProperty('satellite','visibility') !== 'none';
+        if (!map.getSource('esri')) { map.addSource('esri',{ type:'raster', tiles:['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize:256 }); map.addLayer({ id:'satellite', type:'raster', source:'esri', layout:{ visibility:'none' } }); }
+        map.setLayoutProperty('satellite','visibility', isSat?'none':'visible');
+        map.setLayoutProperty('osm','visibility', isSat?'visible':'none');
+        btn.textContent = isSat ? 'Satellite' : 'Streets'; };
+      const corner=document.querySelector('.maplibregl-ctrl-top-right')||document.body; const wrap=document.createElement('div'); wrap.className='maplibregl-ctrl maplibregl-ctrl-group'; wrap.appendChild(btn); corner.appendChild(wrap);
     })();
 
     // Home button
-    (function addHome(){
-      const btn = document.createElement('button');
-      btn.textContent = 'Home';
-      btn.className = 'maplibregl-ctrl maplibregl-ctrl-group ctrl-btn';
-      btn.onclick = () => map.fitBounds(VIEW_BOUNDS, { padding: 40, duration: 500 });
-      const corner = document.querySelector('.maplibregl-ctrl-top-right') || document.body;
-      const wrap = document.createElement('div'); wrap.className = 'maplibregl-ctrl maplibregl-ctrl-group'; wrap.appendChild(btn); corner.appendChild(wrap);
-    })();
+    (function addHome(){ const btn=document.createElement('button'); btn.textContent='Home'; btn.className='maplibregl-ctrl maplibregl-ctrl-group ctrl-btn'; btn.onclick=()=>map.fitBounds(VIEW_BOUNDS,{padding:40,duration:500}); const corner=document.querySelector('.maplibregl-ctrl-top-right')||document.body; const wrap=document.createElement('div'); wrap.className='maplibregl-ctrl maplibregl-ctrl-group'; wrap.appendChild(btn); corner.appendChild(wrap); })();
   </script>
 </body>
 </html>
