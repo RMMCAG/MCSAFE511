@@ -1,8 +1,9 @@
+
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Merced County 511 — Clean Build v2 (CMS polish)</title>
+  <title>Merced County 511 — Clean Build v2</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="https://unpkg.com/maplibre-gl@3.5.2/dist/maplibre-gl.css" rel="stylesheet" />
   <!-- Inline favicon to prevent 404s on GH Pages -->
@@ -21,47 +22,6 @@
     .k { width:10px;height:10px;border-radius:2px;display:inline-block;margin-right:.3rem;vertical-align:middle;}
     .popup-list { max-width: 320px;}
     .popup-list button { display:block; width:100%; text-align:left; margin:.25rem 0; padding:.4rem .5rem; border-radius:8px; border:1px solid color-mix(in oklab, CanvasText 30%, transparent); background:color-mix(in oklab, Canvas, CanvasText 6%/60%); cursor:pointer; }
-
-    /* =====================
-       CMS SIGN LOOK & FEEL
-       ===================== */
-    .cms-sign { 
-      --led:#f7b500; /* amber */
-      --led-glow:#facc15;
-      --face:#111;
-      background: radial-gradient(120% 120% at 50% 50%, #000 0%, #0a0a0a 40%, #111 100%);
-      color: var(--led);
-      border-radius: 12px;
-      border: 1px solid #222;
-      box-shadow: inset 0 0 0 1px #000, 0 8px 24px rgba(0,0,0,.35);
-      padding: 10px 12px;
-      max-width: 320px;
-    }
-    .cms-header { 
-      font: 600 11px/1.2 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-      letter-spacing: .06em; 
-      color: #cbd5e1;
-      opacity: .8;
-      margin-bottom: 6px;
-    }
-    .cms-lines { 
-      font: 700 18px/1.35 ui-monospace, SFMono-Regular, Menlo, Monaco, "Cascadia Code", Consolas, "Liberation Mono", monospace;
-      letter-spacing: .08em; 
-      text-transform: uppercase; 
-      display: grid; 
-      gap: 2px; 
-      color: var(--led);
-      text-shadow: 0 0 2px var(--led), 0 0 4px var(--led), 0 0 10px var(--led-glow);
-    }
-    .cms-line { 
-      padding: 2px 4px; 
-      background:
-        radial-gradient(circle at 2px 2px, rgba(255,255,255,.06) 0 1px, transparent 2px) repeat;
-      background-size: 8px 8px; /* faint hole grid */
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
-    }
-    .cms-meta { color:#94a3b8; font: 500 11px/1.2 ui-sans-serif, system-ui; margin-top:6px; }
   </style>
 </head>
 <body>
@@ -80,9 +40,9 @@
     <div class="row"><input type="checkbox" id="chk-metar" checked><label for="chk-metar">Visibility (METAR, mi)</label></div>
     <div class="row"><input type="checkbox" id="chk-usgs" checked><label for="chk-usgs">USGS Streamgages</label></div>
     <hr>
-    <div class="row"><input type="checkbox" id="chk-gtfs-bus"><label for="chk-gtfs-bus">The Bus (GTFS static)</label></div>
-    <div class="row"><input type="checkbox" id="chk-rt-bus"><label for="chk-rt-bus">The Bus (GTFS‑RT vehicles)</label></div>
-    <div class="row"><input type="checkbox" id="chk-gtfs-yarts"><label for="chk-gtfs-yarts">YARTS (GTFS static)</label></div>
+    <div class="row"><input type="checkbox" id="chk-gtfs-bus" checked><label for="chk-gtfs-bus">The Bus (GTFS static)</label></div>
+    <div class="row"><input type="checkbox" id="chk-rt-bus" checked><label for="chk-rt-bus">The Bus (GTFS‑RT vehicles)</label></div>
+    <div class="row"><input type="checkbox" id="chk-gtfs-yarts" checked><label for="chk-gtfs-yarts">YARTS (GTFS static)</label></div>
     <div class="legend">
       <span><i class="k" style="background:#10b981"></i>CCTV</span>
       <span><i class="k" style="background:#6366f1"></i>CMS</span>
@@ -115,9 +75,9 @@
     );
 
     const QK = {
-      chp: `${WORKER}/?src=${encodeURIComponent('https://quickmap.dot.ca.gov/data/chp-only.kml')}`,
-      lcs: `${WORKER}/?src=${encodeURIComponent('https://quickmap.dot.ca.gov/data/lcs2way.kml')}`,
-      cms: `${WORKER}/?src=${encodeURIComponent('https://quickmap.dot.ca.gov/data/cms.kml')}`
+      chp: ${WORKER}/?src=${encodeURIComponent('https://quickmap.dot.ca.gov/data/chp-only.kml')},
+      lcs: ${WORKER}/?src=${encodeURIComponent('https://quickmap.dot.ca.gov/data/lcs2way.kml')},
+      cms: ${WORKER}/?src=${encodeURIComponent('https://quickmap.dot.ca.gov/data/cms.kml')}
     };
 
     // NWS & METAR
@@ -141,7 +101,7 @@
     };
 
     // Proxy helper (CORS)
-    const prox = (u) => `${WORKER}/?src=${encodeURIComponent(u)}`;
+    const prox = (u) => ${WORKER}/?src=${encodeURIComponent(u)};
     FEEDS.thebus.gtfsZip = prox(FEEDS.thebus.gtfsZip);
     FEEDS.thebus.rtVehicles = prox(FEEDS.thebus.rtVehicles);
     FEEDS.yarts.gtfsZip = prox(FEEDS.yarts.gtfsZip);
@@ -163,39 +123,6 @@
 
     function fetchJSON(url, opts={}){ return fetch(url, opts).then(r => r.ok ? r.json() : null).catch(() => null); }
 
-    // =====================
-    // CMS TEXT HELPERS
-    // =====================
-    function htmlEscape(s){
-      return String(s).replace(/[&<>\"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m]));
-    }
-    function extractPlainText(raw){
-      if(raw==null) return '';
-      // 1) Handle literal \n characters first
-      let s = String(raw).replace(/\\n/g, '\n');
-      // 2) If it contains tags, strip to text content
-      if(/[<>]/.test(s)){
-        const div=document.createElement('div');
-        div.innerHTML=s;
-        s = div.textContent || div.innerText || '';
-      }
-      return s;
-    }
-    function normalizeCmsLines(raw){
-      let s = extractPlainText(raw);
-      // Normalize newlines and whitespace
-      s = s.replace(/\r\n?|\u2028|\u2029/g, '\n'); // CR/LF variants
-      s = s.replace(/[\t\f\v]+/g, ' ');
-      // Collapse 3+ spaces to 1, but preserve single spaces inside words
-      s = s.replace(/ {2,}/g, ' ');
-      // Replace some typical artifacts
-      s = s.replace(/\s*[|·•]+\s*/g, ' • ');
-      // Trim each line and drop empties
-      const lines = s.split('\n').map(l => l.trim()).filter(l => l.length);
-      // All-caps for sign look
-      return lines.map(l => l.toUpperCase());
-    }
-
     map.on('load', () => {
       map.fitBounds(VIEW_BOUNDS, { padding: 40, duration: 0 });
 
@@ -204,8 +131,8 @@
       map.addLayer({ id: 'osm', type: 'raster', source: 'osm' });
 
       const addCircleClustered = (src, baseColor, idPrefix) => {
-        if (!map.getLayer(`${idPrefix}-clusters`)) map.addLayer({ id: `${idPrefix}-clusters`, type: 'circle', source: src, filter: ['has','point_count'], paint: { 'circle-color': baseColor, 'circle-radius': ['interpolate',['linear'],['get','point_count'], 2,12, 100,22], 'circle-stroke-color':'#fff','circle-stroke-width':1 } });
-        if (!map.getLayer(`${idPrefix}-count`)) map.addLayer({ id: `${idPrefix}-count`, type: 'symbol', source: src, filter: ['has','point_count'], layout: { 'text-field': ['get','point_count_abbreviated'], 'text-size': 12 }, paint: { 'text-color': '#fff' } });
+        if (!map.getLayer(${idPrefix}-clusters)) map.addLayer({ id: ${idPrefix}-clusters, type: 'circle', source: src, filter: ['has','point_count'], paint: { 'circle-color': baseColor, 'circle-radius': ['interpolate',['linear'],['get','point_count'], 2,12, 100,22], 'circle-stroke-color':'#fff','circle-stroke-width':1 } });
+        if (!map.getLayer(${idPrefix}-count)) map.addLayer({ id: ${idPrefix}-count, type: 'symbol', source: src, filter: ['has','point_count'], layout: { 'text-field': ['get','point_count_abbreviated'], 'text-size': 12 }, paint: { 'text-color': '#fff' } });
       };
 
       // ---- CCTV
@@ -230,14 +157,14 @@
           const t = await (await fetch(kmlUrl, { cache: 'no-store' })).text();
           const xml = new DOMParser().parseFromString(t, 'text/xml');
           const gj = toGeoJSON.kml(xml);
-          const src = `${id}-src`;
+          const src = ${id}-src;
           if (map.getSource(src)) map.removeSource(src);
           map.addSource(src, { type:'geojson', data: gj, cluster: !asLine, clusterRadius: 40 });
           if (asLine) {
-            map.addLayer({ id:`${id}-lyr`, type:'line', source: src, paint:{ 'line-color': color, 'line-width': 3, 'line-opacity': 0.8 } });
+            map.addLayer({ id:${id}-lyr, type:'line', source: src, paint:{ 'line-color': color, 'line-width': 3, 'line-opacity': 0.8 } });
           } else {
             addCircleClustered(src, color, id);
-            map.addLayer({ id:`${id}-lyr`, type:'circle', source: src, filter:['!', ['has','point_count']], paint:{ 'circle-radius':["interpolate",["linear"],["zoom"],6,3,10,5,14,8], 'circle-color': color, 'circle-stroke-width':1, 'circle-stroke-color':'#fff' } });
+            map.addLayer({ id:${id}-lyr, type:'circle', source: src, filter:['!', ['has','point_count']], paint:{ 'circle-radius':["interpolate",["linear"],["zoom"],6,3,10,5,14,8], 'circle-color': color, 'circle-stroke-width':1, 'circle-stroke-color':'#fff' } });
           }
         } catch (e) { console.error('KML', id, e); }
       }
@@ -248,7 +175,7 @@
 
       // ---- NWS Alerts (use /active?area=CA and filter client-side by bounds)
       (async function addNwsAlerts(){
-        const url = `${NWS_ALERTS_BASE}/active?area=CA&status=actual&message_type=alert`;
+        const url = ${NWS_ALERTS_BASE}/active?area=CA&status=actual&message_type=alert;
         const gj = await fetchJSON(url, { headers: { 'Accept':'application/geo+json' }, cache:'no-store' });
         if (!gj || !gj.features) return;
         const [w,s] = VIEW_BOUNDS[0]; const [e,n] = VIEW_BOUNDS[1];
@@ -264,14 +191,14 @@
 
       // ---- METAR Visibility
       ;(async function addMetar(){
-        const list = await fetchJSON(`${NWS_STATIONS}?state=CA`, { cache:'no-store' });
+        const list = await fetchJSON(${NWS_STATIONS}?state=CA, { cache:'no-store' });
         if (!list || !list.features) return;
         const [w,s] = VIEW_BOUNDS[0]; const [e,n] = VIEW_BOUNDS[1];
         const inBox = ([lng,lat]) => (lng>=w && lng<=e && lat>=s && lat<=n);
         const feats = list.features.filter(st => st.geometry && inBox(st.geometry.coordinates));
         const batches = feats.map(st => {
           const id = st.properties.stationIdentifier; const [lng,lat] = st.geometry.coordinates; if (!id) return null;
-          return fetchJSON(`${NWS_STATIONS}/${id}/observations/latest`, { cache:'no-store' }).then(o => {
+          return fetchJSON(${NWS_STATIONS}/${id}/observations/latest, { cache:'no-store' }).then(o => {
             if (!o || !o.properties) return null; const visM=o.properties.visibility && o.properties.visibility.value; if (visM==null) return null;
             return { type:'Feature', geometry:{ type:'Point', coordinates:[lng,lat] }, properties:{ id, visMi: visM/1609.344, cond:o.properties.textDescription||'', raw:o.properties.rawMessage||'', time:o.properties.timestamp } };
           }).catch(()=>null);
@@ -285,8 +212,8 @@
       // ---- USGS streamgages
       ;(async function addUSGS(){
         const [w,s] = VIEW_BOUNDS[0]; const [e,n] = VIEW_BOUNDS[1];
-        const p = new URLSearchParams({ format:'json', parameterCd:'00065,00060', bBox:`${w},${s},${e},${n}`, siteStatus:'active' });
-        const iv = await fetchJSON(`${USGS_IV}?${p.toString()}`, { cache:'no-store' });
+        const p = new URLSearchParams({ format:'json', parameterCd:'00065,00060', bBox:${w},${s},${e},${n}, siteStatus:'active' });
+        const iv = await fetchJSON(${USGS_IV}?${p.toString()}, { cache:'no-store' });
         if (!iv) return;
         const sites = new Map();
         for (const ts of (iv.value?.timeSeries || [])){
@@ -302,7 +229,7 @@
           if (parm === '00060') r.flow_cfs = parseFloat(val.value);
           r.time = val.dateTime || r.time;
         }
-        const feats = [...sites.values()].map(r => ({ type:'Feature', geometry:{ type:'Point', coordinates:[r.lng,r.lat] }, properties:{ site:r.site, name:r.name, stage_ft:r.stage_ft, flow_cfs:r.flow_cfs, time:r.time, url:`https://waterdata.usgs.gov/monitoring-location/${r.site}/#parameterCode=00065&period=P7D` } }));
+        const feats = [...sites.values()].map(r => ({ type:'Feature', geometry:{ type:'Point', coordinates:[r.lng,r.lat] }, properties:{ site:r.site, name:r.name, stage_ft:r.stage_ft, flow_cfs:r.flow_cfs, time:r.time, url:https://waterdata.usgs.gov/monitoring-location/${r.site}/#parameterCode=00065&period=P7D } }));
         map.addSource('usgs-src',{ type:'geojson', data:{ type:'FeatureCollection', features: feats }, cluster:true, clusterRadius:40 });
         addCircleClustered('usgs-src','#14b8a6','usgs');
         map.addLayer({ id:'usgs-lyr', type:'circle', source:'usgs-src', filter:['!', ['has','point_count']], paint:{ 'circle-radius':["interpolate",["linear"],["zoom"],6,3,10,5,14,8], 'circle-color':['interpolate',['linear'],['coalesce',['get','flow_cfs'],0], 0,'#a7f3d0', 100,'#34d399', 1000,'#10b981', 5000,'#047857'], 'circle-stroke-width':1, 'circle-stroke-color':'#fff' } });
@@ -310,7 +237,7 @@
 
       // ---- GTFS Static
       async function addGtfsStatic(idPrefix, zipUrl, color){
-        const srcStops=`${idPrefix}-stops-src`; const srcShapes=`${idPrefix}-shapes-src`;
+        const srcStops=${idPrefix}-stops-src; const srcShapes=${idPrefix}-shapes-src;
         try{
           const buf = await (await fetch(zipUrl, { cache:'no-store' })).arrayBuffer();
           const zip = await JSZip.loadAsync(buf);
@@ -320,8 +247,8 @@
           if (stops) {
             const feats = stops.filter(s=>s.stop_lat&&s.stop_lon).map(s=>({ type:'Feature', geometry:{ type:'Point', coordinates:[+s.stop_lon, +s.stop_lat] }, properties:{ stop_id:s.stop_id, stop_name:s.stop_name } }));
             map.addSource(srcStops,{ type:'geojson', data:{ type:'FeatureCollection', features: feats }, cluster:true, clusterRadius:40 });
-            addCircleClustered(srcStops, color, `${idPrefix}-stops`);
-            map.addLayer({ id:`${idPrefix}-stops-lyr`, type:'circle', source:srcStops, filter:['!', ['has','point_count']], paint:{ 'circle-radius':["interpolate",["linear"],["zoom"],6,2.5,10,4.5,14,7], 'circle-color': color, 'circle-stroke-width':1, 'circle-stroke-color':'#fff' } });
+            addCircleClustered(srcStops, color, ${idPrefix}-stops);
+            map.addLayer({ id:${idPrefix}-stops-lyr, type:'circle', source:srcStops, filter:['!', ['has','point_count']], paint:{ 'circle-radius':["interpolate",["linear"],["zoom"],6,2.5,10,4.5,14,7], 'circle-color': color, 'circle-stroke-width':1, 'circle-stroke-color':'#fff' } });
           }
           if (shapes) {
             const byId = new Map();
@@ -329,13 +256,16 @@
             const lineFeats = [];
             byId.forEach(arr => { arr.sort((a,b)=>a.shape_pt_sequence-b.shape_pt_sequence); const coords = arr.map(p=>[+p.shape_pt_lon, +p.shape_pt_lat]); if(coords.length>1) lineFeats.push({ type:'Feature', geometry:{ type:'LineString', coordinates: coords }, properties:{ shape_id: arr[0].shape_id } }); });
             map.addSource(srcShapes,{ type:'geojson', data:{ type:'FeatureCollection', features: lineFeats } });
-            map.addLayer({ id:`${idPrefix}-shapes-lyr`, type:'line', source:srcShapes, paint:{ 'line-color': color, 'line-width': 2, 'line-opacity': 0.8 } });
+            map.addLayer({ id:${idPrefix}-shapes-lyr, type:'line', source:srcShapes, paint:{ 'line-color': color, 'line-width': 2, 'line-opacity': 0.8 } });
           }
         }catch(e){ console.error('GTFS static load failed', idPrefix, e); }
       }
 
+      addGtfsStatic('bus', FEEDS.thebus.gtfsZip, FEEDS.thebus.color);
+      addGtfsStatic('yarts', FEEDS.yarts.gtfsZip, FEEDS.yarts.color);
+
       // ---- GTFS‑RT Vehicles
-      const GTFS_RT_PROTO = `syntax = "proto2"; package transit_realtime; message FeedMessage { required FeedHeader header = 1; repeated FeedEntity entity = 2; } message FeedHeader { required string gtfs_realtime_version = 1; optional uint64 timestamp = 3; } message FeedEntity { required string id = 1; optional VehiclePosition vehicle = 3; } message VehiclePosition { optional TripDescriptor trip = 1; optional VehicleDescriptor vehicle = 8; optional Position position = 2; optional uint64 timestamp = 5; } message TripDescriptor { optional string trip_id = 1; optional string route_id = 5; } message VehicleDescriptor { optional string id = 1; optional string label = 2; } message Position { optional float latitude = 1; optional float longitude = 2; optional float bearing = 3; optional double speed = 4; }`;
+      const GTFS_RT_PROTO = syntax = "proto2"; package transit_realtime; message FeedMessage { required FeedHeader header = 1; repeated FeedEntity entity = 2; } message FeedHeader { required string gtfs_realtime_version = 1; optional uint64 timestamp = 3; } message FeedEntity { required string id = 1; optional VehiclePosition vehicle = 3; } message VehiclePosition { optional TripDescriptor trip = 1; optional VehicleDescriptor vehicle = 8; optional Position position = 2; optional uint64 timestamp = 5; } message TripDescriptor { optional string trip_id = 1; optional string route_id = 5; } message VehicleDescriptor { optional string id = 1; optional string label = 2; } message Position { optional float latitude = 1; optional float longitude = 2; optional float bearing = 3; optional double speed = 4; };
 
       async function addGtfsRtVehicles(idPrefix, url, color){
         try {
@@ -351,16 +281,16 @@
             const vp = ent.vehicle; const pos = vp && vp.position; if (!pos) continue;
             feats.push({ type:'Feature', geometry:{ type:'Point', coordinates:[pos.longitude, pos.latitude] }, properties:{ id: ent.id, label: vp?.vehicle?.label || vp?.vehicle?.id || '', route: vp?.trip?.route_id || '', trip: vp?.trip?.trip_id || '', bearing: pos.bearing||null, speed: pos.speed||null, time: vp.timestamp? new Date(Number(vp.timestamp)*1000).toISOString(): null } });
           }
-          const src = `${idPrefix}-rt-src`;
+          const src = ${idPrefix}-rt-src;
           const data = { type:'FeatureCollection', features: feats };
           const have = map.getSource(src);
           if (have && have.setData) have.setData(data);
-          else { map.addSource(src, { type:'geojson', data }); map.addLayer({ id:`${idPrefix}-rt-lyr`, type:'circle', source:src, paint:{ 'circle-radius':5, 'circle-color': color || '#0ea5e9', 'circle-stroke-color':'#fff', 'circle-stroke-width':1 } }); }
+          else { map.addSource(src, { type:'geojson', data }); map.addLayer({ id:${idPrefix}-rt-lyr, type:'circle', source:src, paint:{ 'circle-radius':5, 'circle-color': color || '#0ea5e9', 'circle-stroke-color':'#fff', 'circle-stroke-width':1 } }); }
         } catch (e) { console.error('GTFS‑RT update failed', idPrefix, e); }
       }
 
-      $1
-      let rtTimer = null;
+      async function refreshRt(){ await addGtfsRtVehicles('bus', FEEDS.thebus.rtVehicles, FEEDS.thebus.color); }
+      refreshRt(); setInterval(refreshRt, 30000);
 
       // ---- TOGGLES
       const toggles = [
@@ -373,7 +303,7 @@
         { chk:'chk-metar', layers:['metar-vis-lyr'] },
         { chk:'chk-usgs', layers:['usgs-clusters','usgs-count','usgs-lyr'] },
         { chk:'chk-gtfs-bus', layers:['bus-stops-clusters','bus-stops-count','bus-stops-lyr','bus-shapes-lyr'], loader: () => addGtfsStatic('bus', FEEDS.thebus.gtfsZip, FEEDS.thebus.color) },
-        { chk:'chk-rt-bus', layers:['bus-rt-lyr'], loader: () => refreshRt(), onEnable: () => { if(!rtTimer){ refreshRt(); rtTimer = setInterval(refreshRt, 30000);} }, onDisable: () => { if(rtTimer){ clearInterval(rtTimer); rtTimer=null; } } },
+        { chk:'chk-rt-bus', layers:['bus-rt-lyr'], loader: () => refreshRt() },
         { chk:'chk-gtfs-yarts', layers:['yarts-stops-clusters','yarts-stops-count','yarts-stops-lyr','yarts-shapes-lyr'], loader: () => addGtfsStatic('yarts', FEEDS.yarts.gtfsZip, FEEDS.yarts.color) },
       ];
       for (const t of toggles){
@@ -381,65 +311,16 @@
         el?.addEventListener('change', () => {
           const visible = el.checked;
           const haveAny = (t.layers||[]).some(id => map.getLayer(id));
-          if (visible) {
-            if (!haveAny && t.loader) t.loader();
-            for (const id of (t.layers||[])) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'visible');
-            if (t.onEnable) t.onEnable();
-          } else {
-            for (const id of (t.layers||[])) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'none');
-            if (t.onDisable) t.onDisable();
-          }
+          if (!haveAny && visible && t.loader) { t.loader(); return; }
+          for (const id of (t.layers||[])) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
         });
       }
 
       // ---- OVERLAP CLICK PICKER (only real content layers, not cluster/count)
       const CLICK_LAYERS = ['cctv-lyr','cms-lyr','chp-lyr','lcs-lyr','nws-alerts-fill','fog-lyr','metar-vis-lyr','usgs-lyr','bus-stops-lyr','yarts-stops-lyr','bus-rt-lyr'];
 
-      function titleForFeature(f){ const id=f.layer?.id||''; const p=f.properties||{}; if(id==='bus-rt-lyr') return `The Bus — ${p.label||p.id||'Vehicle'}`; if(id==='bus-stops-lyr') return `The Bus — Stop ${p.stop_name||p.stop_id}`; if(id==='yarts-stops-lyr') return `YARTS — Stop ${p.stop_name||p.stop_id}`; if(id==='cctv-lyr') return `CCTV — ${p.locationName||'Camera'}`; if(id==='cms-lyr') return `CMS — ${p.name||p.Title||'Sign'}`; if(id==='chp-lyr') return `CHP — ${p.name||p.Title||'Incident'}`; if(id==='lcs-lyr') return `LCS — ${p.name||p.Title||'Closure'}`; if(id==='nws-alerts-fill'||id==='fog-lyr') return `NWS — ${p.event||'Alert'}`; return 'Feature'; }
-
-      function cmsPopupHTML(props){
-        const title = props.name || props.Title || 'Sign';
-        const raw = props.description || props.Description || '';
-        const lines = normalizeCmsLines(raw);
-        const body = lines.map(l => `<div class="cms-line">${htmlEscape(l)}</div>`).join('');
-        const meta = [props.direction || props.Direction, props.road || props.Road, props.route || props.Route].filter(Boolean).join(' · ');
-        return `
-          <div class="cms-sign">
-            <div class="cms-header">${htmlEscape(title)}</div>
-            <div class="cms-lines">${body || '<div class="cms-line">NO MESSAGE</div>'}</div>
-            ${meta ? `<div class="cms-meta">${htmlEscape(meta)}</div>`: ''}
-          </div>`;
-      }
-
-      function htmlForFeature(f){
-        const id=f.layer?.id||''; const p=f.properties||{};
-        if(id==='bus-rt-lyr'){
-          return `<div><strong>The Bus — ${p.label||p.id||'Vehicle'}</strong><br>Route: ${p.route||'—'}<br>Trip: ${p.trip||'—'}<br>Bearing: ${p.bearing??'—'}<br>Speed: ${p.speed? (p.speed*2.237).toFixed(0)+' mph':'—'}<br><small>${p.time? new Date(p.time).toLocaleString(): ''}</small></div>`;
-        }
-        if(/-stops-lyr$/.test(id)){
-          return `<div><strong>${p.stop_name||'Stop'}</strong><br>ID: ${p.stop_id||''}</div>`;
-        }
-        if(id==='cctv-lyr'){
-          const url=p.currentImageURL||''; const where = [p.county, p.route].filter(Boolean).join(' · ');
-          return `<div><strong>${p.locationName||'Camera'}</strong>${where? `<div>${where}</div>`:''}${url? `<div style='margin-top:6px'><img src='${url}' style='max-width:320px;max-height:240px;border-radius:8px'></div>`:''}</div>`;
-        }
-        if(id==='cms-lyr'){
-          return cmsPopupHTML(p);
-        }
-        if(id==='chp-lyr'||id==='lcs-lyr'){
-          const title=p.name||p.Title||'Item';
-          const desc=p.description||p.Description||'<em>No details</em>';
-          return `<div><strong>${title}</strong><div style='max-width:320px'>${desc}</div>`;
-        }
-        if(id==='nws-alerts-fill'||id==='fog-lyr'){
-          return `<div><strong>${p.event||'NWS Alert'}</strong><div>${p.headline||''}</div><div><small>${p.effective||''} → ${p.expires||''}</small></div></div>`;
-        }
-        if(id==='usgs-lyr'){
-          const u=p.url? `<a href='${p.url}' target='_blank' rel='noopener'>Open USGS site</a>`:'';
-          return `<div><strong>${p.name||'USGS Gage'}</strong><br>Site: ${p.site||''}<br>Stage: ${p.stage_ft!=null? Number(p.stage_ft).toFixed(2)+' ft':'—'}<br>Flow: ${p.flow_cfs!=null? Math.round(p.flow_cfs)+' cfs':'—'}<br><small>${p.time? new Date(p.time).toLocaleString(): ''}</small><div style='margin-top:6px'>${u}</div></div>`;
-        }
-        return '<em>Feature</em>';
-      }
+      function titleForFeature(f){ const id=f.layer?.id||''; const p=f.properties||{}; if(id==='bus-rt-lyr') return The Bus — ${p.label||p.id||'Vehicle'}; if(id==='bus-stops-lyr') return The Bus — Stop ${p.stop_name||p.stop_id}; if(id==='yarts-stops-lyr') return YARTS — Stop ${p.stop_name||p.stop_id}; if(id==='cctv-lyr') return CCTV — ${p.locationName||'Camera'}; if(id==='cms-lyr') return CMS — ${p.name||p.Title||'Sign'}; if(id==='chp-lyr') return CHP — ${p.name||p.Title||'Incident'}; if(id==='lcs-lyr') return LCS — ${p.name||p.Title||'Closure'}; if(id==='nws-alerts-fill'||id==='fog-lyr') return NWS — ${p.event||'Alert'}; return 'Feature'; }
+      function htmlForFeature(f){ const id=f.layer?.id||''; const p=f.properties||{}; if(id==='bus-rt-lyr'){ return <div><strong>The Bus — ${p.label||p.id||'Vehicle'}</strong><br>Route: ${p.route||'—'}<br>Trip: ${p.trip||'—'}<br>Bearing: ${p.bearing??'—'}<br>Speed: ${p.speed? (p.speed*2.237).toFixed(0)+' mph':'—'}<br><small>${p.time? new Date(p.time).toLocaleString(): ''}</small></div>; } if(/-stops-lyr$/.test(id)){ return <div><strong>${p.stop_name||'Stop'}</strong><br>ID: ${p.stop_id||''}</div>; } if(id==='cctv-lyr'){ const url=p.currentImageURL||''; const where = [p.county, p.route].filter(Boolean).join(' · '); return <div><strong>${p.locationName||'Camera'}</strong>${where? <div>${where}</div>:''}${url? <div style='margin-top:6px'><img src='${url}' style='max-width:320px;max-height:240px;border-radius:8px'></div>:''}</div>; } if(id==='cms-lyr'||id==='chp-lyr'||id==='lcs-lyr'){ const title=p.name||p.Title||'Item'; const desc=p.description||p.Description||'<em>No details</em>'; return <div><strong>${title}</strong><div style='max-width:320px'>${desc}</div>; } if(id==='nws-alerts-fill'||id==='fog-lyr'){ return <div><strong>${p.event||'NWS Alert'}</strong><div>${p.headline||''}</div><div><small>${p.effective||''} → ${p.expires||''}</small></div></div>; } if(id==='usgs-lyr'){ const u=p.url? <a href='${p.url}' target='_blank' rel='noopener'>Open USGS site</a>:''; return <div><strong>${p.name||'USGS Gage'}</strong><br>Site: ${p.site||''}<br>Stage: ${p.stage_ft!=null? Number(p.stage_ft).toFixed(2)+' ft':'—'}<br>Flow: ${p.flow_cfs!=null? Math.round(p.flow_cfs)+' cfs':'—'}<br><small>${p.time? new Date(p.time).toLocaleString(): ''}</small><div style='margin-top:6px'>${u}</div></div>; } return '<em>Feature</em>'; }
 
       function showPopup(f, lngLat){ new maplibregl.Popup({maxWidth:'360px'}).setLngLat(lngLat).setHTML(htmlForFeature(f)).addTo(map); }
       map.on('click', (e)=>{
@@ -448,8 +329,8 @@
         if (!feats.length) return;
         const points = feats.filter(f=>f.geometry.type==='Point' || f.layer.id==='lcs-lyr' || f.layer.id==='nws-alerts-fill' || f.layer.id==='fog-lyr');
         if (points.length===1) { showPopup(points[0], e.lngLat); return; }
-        const items = points.slice(0,10).map((f,i)=>`<button data-i="${i}">${titleForFeature(f)}</button>`).join('');
-        const div = document.createElement('div'); div.className='popup-list'; div.innerHTML=`<strong>Choose an item:</strong>${items}`;
+        const items = points.slice(0,10).map((f,i)=><button data-i="${i}">${titleForFeature(f)}</button>).join('');
+        const div = document.createElement('div'); div.className='popup-list'; div.innerHTML=<strong>Choose an item:</strong>${items};
         const pop = new maplibregl.Popup({maxWidth:'360px'}).setLngLat(e.lngLat).setDOMContent(div).addTo(map);
         div.querySelectorAll('button').forEach(btn=>btn.addEventListener('click',()=>{ const i=+btn.getAttribute('data-i'); pop.remove(); showPopup(points[i], e.lngLat); }));
       });
