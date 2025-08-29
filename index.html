@@ -33,6 +33,7 @@
   <script src="https://unpkg.com/@tmcw/togeojson@7.1.2/dist/togeojson.umd.js"></script>
 
   <script>
+
     const WORKER = 'https://restless-dream-d169.windman007.workers.dev';
 
     // ArcGIS CCTV FeatureServer (GeoJSON works cross-origin)
@@ -49,7 +50,7 @@
     // 2) MAP SETUP
     // =====================
     const MERCED_CENTER = [-120.48, 37.30];
-    const VIEW_BOUNDS = [[-121.35, 36.60], [-119.30, 37.90]]; // [W,S],[E,N]
+    const VIEW_BOUNDS = [[-121.35, 36.60], [-119.30, 37.90]]; // [W,S],[E,N] // [W,S],[E,N]
 
     const map = new maplibregl.Map({
       container: 'map',
@@ -90,6 +91,83 @@
       // =====================
       // 3) DATA LAYER HELPERS
       // =====================
+      /* clipping helpers removed per user request (show statewide) */
+      function clipToBox(featureCollection) {
+        return {
+          type: 'FeatureCollection',
+          features: (featureCollection.features || []).filter(f => geomInBox(f.geometry))
+        };
+      }
+
+      async function addCctv() {
+        try {
+          const resp = await fetch(CCTV_URL, { cache: 'no-store' });
+          if (!resp.ok) throw new Error(`CCTV HTTP ${resp.status}`);
+          const data = await resp.json();
+          const clipped = data; // no clip — show statewide per request
+          const src = 'cctv-src', lyr = 'cctv-lyr';
+          if (map.getLayer(lyr)) map.removeLayer(lyr);
+          if (map.getSource(src)) map.removeSource(src);
+          map.addSource(src, { type: 'geojson', data: clipped });
+          map.addLayer({ id: lyr, type: 'circle', source: src, paint: {
+            'circle-radius': ["interpolate", ["linear"], ["zoom"], 6, 3, 9, 5, 12, 7, 14, 9],
+            'circle-color': '#10b981',
+            'circle-stroke-width': 1,
+            'circle-stroke-color': '#fff'
+          } });
+
+          // Popups
+          map.on('click', lyr, (e) => {
+            const f = e.features?.[0];
+            const p = f?.properties || {};
+            const html = `<strong>${p.locationName || 'Camera'}</strong><br>Route: ${p.route ?? '—'}<br><a href="${p.currentImageURL || '#'}" target="_blank" rel="noopener">Latest image</a>`;
+            new maplibregl.Popup().setLngLat(e.lngLat).setHTML(html).addTo(map);
+          });
+          map.on('mouseenter', lyr, () => map.getCanvas().style.cursor = 'pointer');
+          map.on('mouseleave', lyr, () => map.getCanvas().style.cursor = '');
+          console.log('CCTV loaded (statewide):', clipped.features?.length || 0);
+        } catch (err) { console.error('CCTV load failed:', err); }
+      }
+
+      async function addKmlLayer(kmlUrl, id, layerType = 'circle', paint = {}) {
+        try {
+          const resp = await fetch(kmlUrl, { cache: 'no-store' });
+          if (!resp.ok) throw new Error(`KML HTTP ${resp.status}`);
+          const text = await resp.text();
+          const xml = new DOMParser().parseFromString(text, 'text/xml');
+          let gj = window.toGeoJSON.kml(xml);
+          // no clip — show statewide per request
+
+          const src = `${id}-src`, lyr = `${id}-lyr`;
+          if (map.getLayer(lyr)) map.removeLayer(lyr);
+          if (map.getSource(src)) map.removeSource(src);
+          map.addSource(src, { type: 'geojson', data: gj });
+
+          if (layerType === 'line') {
+            map.addLayer({ id: lyr, type: 'line', source: src, paint });
+          } else {
+            map.addLayer({ id: lyr, type: 'circle', source: src, paint: Object.assign({ 'circle-radius': 5, 'circle-color': '#ef4444', 'circle-stroke-width': 1, 'circle-stroke-color': '#fff' }, paint) });
+          }
+
+          // Popups for both points and lines (KML usually stores HTML in properties.description)
+          const popupHtml = (p) => {
+            const title = p.name || p.Title || 'Info';
+            const desc = p.description || p.Description || '';
+            return `<strong>${title}</strong><div style="max-width:280px;">${desc}</div>`;
+          };
+          map.on('click', lyr, (e) => {
+            const f = e.features?.[0];
+            const p = f?.properties || {};
+            new maplibregl.Popup().setLngLat(e.lngLat).setHTML(popupHtml(p)).addTo(map);
+          });
+          map.on('mouseenter', lyr, () => map.getCanvas().style.cursor = 'pointer');
+          map.on('mouseleave', lyr, () => map.getCanvas().style.cursor = '');
+
+          console.log(`KML loaded for ${id} (clipped):`, gj.features?.length || 0);
+        } catch (err) {
+          console.error('KML load failed for', id, err);
+        }
+      }
       async function addCctv() {
         try {
           const resp = await fetch(CCTV_URL, { cache: 'no-store' });
