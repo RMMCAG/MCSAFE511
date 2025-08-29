@@ -33,16 +33,21 @@
   <script src="https://unpkg.com/@tmcw/togeojson@7.1.2/dist/togeojson.umd.js"></script>
 
   <script>
-
+    // =====================
+    // 1) SET THIS ONCE
+    // =====================
+    // Replace ONLY this base with your Cloudflare Worker URL
+    // Example: const WORKER = 'https://restless-dream-d169.windman007.workers.dev';
     const WORKER = 'https://restless-dream-d169.windman007.workers.dev';
 
     // ArcGIS CCTV FeatureServer (GeoJSON works cross-origin)
-    const CCTV_URL =
-  'https://caltrans-gis.dot.ca.gov/arcgis/rest/services/CHhighway/CCTV/FeatureServer/0/query'
-  + '?where=' + encodeURIComponent("county IN ('Merced','Stanislaus','Madera','Mariposa')")
-  + '&outFields=' + encodeURIComponent('OBJECTID,locationName,currentImageURL,county,route')
-  + '&returnGeometry=true&f=geojson';
-    
+    const CCTV_URL = (
+      'https://caltrans-gis.dot.ca.gov/arcgis/rest/services/CHhighway/CCTV/FeatureServer/0/query'
+      + '?where=' + encodeURIComponent("county IN ('Merced','Stanislaus','Madera','Mariposa') AND 1=1")
+      + '&outFields=' + encodeURIComponent('OBJECTID,locationName,currentImageURL,county,route')
+      + '&returnGeometry=true&f=geojson'
+    );
+
     // QuickMap KML endpoints (proxied through WORKER)
     const QK = {
       chp: `${WORKER}/?src=${encodeURIComponent('https://quickmap.dot.ca.gov/data/chp-only.kml')}`,
@@ -54,7 +59,7 @@
     // 2) MAP SETUP
     // =====================
     const MERCED_CENTER = [-120.48, 37.30];
-    const VIEW_BOUNDS = [[-121.35, 36.60], [-119.30, 37.90]]; // [W,S],[E,N] // [W,S],[E,N]
+    const VIEW_BOUNDS = [[-122.30, 36.60], [-119.00, 37.90]]; // widen westward to include a bit of Santa Clara County // expanded westward to include part of Santa Clara and recenter Merced // [W,S],[E,N]
 
     const map = new maplibregl.Map({
       container: 'map',
@@ -103,33 +108,62 @@
         };
       }
 
+      async function loadCameraIcon() {
+        if (map.hasImage && map.hasImage('camera-icon')) return;
+        const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>
+          <rect x='3' y='7' width='18' height='12' rx='2' ry='2' fill='white'/>
+          <path d='M7 7l2-3h6l2 3'/>
+          <circle cx='12' cy='13' r='4' fill='white'/>
+          <circle cx='12' cy='13' r='2'/>
+        </svg>`;
+        const blob = new Blob([svg], { type: 'image/svg+xml' });
+        const img = await createImageBitmap(blob);
+        if (!map.hasImage || !map.hasImage('camera-icon')) map.addImage('camera-icon', img, { pixelRatio: 2 });
+      }
+
       async function addCctv() {
         try {
+          await loadCameraIcon();
           const resp = await fetch(CCTV_URL, { cache: 'no-store' });
           if (!resp.ok) throw new Error(`CCTV HTTP ${resp.status}`);
           const data = await resp.json();
-          const clipped = data; // no clip — show statewide per request
           const src = 'cctv-src', lyr = 'cctv-lyr';
           if (map.getLayer(lyr)) map.removeLayer(lyr);
           if (map.getSource(src)) map.removeSource(src);
-          map.addSource(src, { type: 'geojson', data: clipped });
-          map.addLayer({ id: lyr, type: 'circle', source: src, paint: {
-            'circle-radius': ["interpolate", ["linear"], ["zoom"], 6, 3, 9, 5, 12, 7, 14, 9],
-            'circle-color': '#10b981',
-            'circle-stroke-width': 1,
-            'circle-stroke-color': '#fff'
-          } });
+          map.addSource(src, { type: 'geojson', data });
+          map.addLayer({
+            id: lyr,
+            type: 'symbol',
+            source: src,
+            layout: {
+              'icon-image': 'camera-icon',
+              'icon-size': ["interpolate", ["linear"], ["zoom"], 6, 0.35, 10, 0.5, 14, 0.8],
+              'icon-allow-overlap': true
+            }
+          });
 
-          // Popups
+          // Popups with embedded live image + metadata
           map.on('click', lyr, (e) => {
             const f = e.features?.[0];
             const p = f?.properties || {};
-            const html = `<strong>${p.locationName || 'Camera'}</strong><br>Route: ${p.route ?? '—'}<br><a href="${p.currentImageURL || '#'}" target="_blank" rel="noopener">Latest image</a>`;
-            new maplibregl.Popup().setLngLat(e.lngLat).setHTML(html).addTo(map);
+            const coords = f?.geometry?.coordinates || [];
+            const lng = (coords[0] ?? 0).toFixed(5);
+            const lat = (coords[1] ?? 0).toFixed(5);
+            const title = p.locationName || 'Camera';
+            const img = p.currentImageURL ? `<div style="margin-top:6px;"><img src="${p.currentImageURL}" alt="Camera" style="max-width:320px;max-height:240px;display:block;border-radius:8px;"/></div>` : '';
+            const html = `
+              <strong>${title}</strong><br>
+              Route: ${p.route ?? '—'}<br>
+              County: ${p.county ?? '—'}<br>
+              Location: ${lat}, ${lng}
+              ${img}
+            `;
+            new maplibregl.Popup({ maxWidth: '360px' }).setLngLat(e.lngLat).setHTML(html).addTo(map);
           });
           map.on('mouseenter', lyr, () => map.getCanvas().style.cursor = 'pointer');
           map.on('mouseleave', lyr, () => map.getCanvas().style.cursor = '');
-          console.log('CCTV loaded (statewide):', clipped.features?.length || 0);
+
+          console.log('CCTV loaded (filtered Merced+Stanislaus):', data.features?.length || 0);
         } catch (err) { console.error('CCTV load failed:', err); }
       }
 
