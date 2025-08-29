@@ -9,31 +9,56 @@
     :root { color-scheme: light dark; }
     html, body { height: 100%; margin: 0; padding: 0; }
     #map { width: 100%; height: 100%; }
+    .panel { position:absolute; top:10px; left:10px; z-index:10; background:color-mix(in oklab, Canvas, CanvasText 10%/70%); backdrop-filter: blur(6px); padding:10px; border-radius:12px; font: 13px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; box-shadow: 0 4px 12px rgba(0,0,0,.15); }
+    .panel h3 { margin:.25rem 0 .5rem; font-size:14px; }
+    .row { display:flex; align-items:center; gap:.4rem; margin:.25rem 0; }
     .ctrl-btn { padding: 6px 10px; }
+    label { user-select:none; }
   </style>
 </head>
 <body>
   <div id="map"></div>
+
+  <!-- Simple layer toggles -->
+  <div class="panel">
+    <h3>Layers</h3>
+    <div class="row"><input type="checkbox" id="chk-cctv" checked><label for="chk-cctv">CCTV (GeoJSON)</label></div>
+    <div class="row"><input type="checkbox" id="chk-chp" checked><label for="chk-chp">CHP Incidents (KML via Worker)</label></div>
+    <div class="row"><input type="checkbox" id="chk-lcs" checked><label for="chk-lcs">Lane Closures (KML via Worker)</label></div>
+    <div class="row"><input type="checkbox" id="chk-cms" checked><label for="chk-cms">CMS Signs (KML via Worker)</label></div>
+  </div>
 
   <script src="https://unpkg.com/maplibre-gl@3.5.2/dist/maplibre-gl.js"></script>
   <!-- KML → GeoJSON (UMD: window.toGeoJSON) -->
   <script src="https://unpkg.com/@tmcw/togeojson@7.1.2/dist/togeojson.umd.js"></script>
 
   <script>
-    // --------- CONFIG ---------
-    const MERCED_CENTER = [-120.88, 37.30];
-    // Constrain users to Merced + nearby counties  [west,south],[east,north]
-    const VIEW_BOUNDS = [[-122.35, 36.60], [-119.30, 37.90]];
+    const WORKER = 'https://restless-dream-d169.windman007.workers.dev';
 
-    // --------- MAP ---------
+    // ArcGIS CCTV FeatureServer (GeoJSON works cross-origin)
+    const CCTV_URL = 'https://caltrans-gis.dot.ca.gov/arcgis/rest/services/CHhighway/CCTV/FeatureServer/0/query?where=1%3D1&outFields=OBJECTID,locationName,currentImageURL,county,route&returnGeometry=true&f=geojson';
+
+    // QuickMap KML endpoints (proxied through WORKER)
+    const QK = {
+      chp: `${WORKER}/?src=${encodeURIComponent('https://quickmap.dot.ca.gov/data/chp-only.kml')}`,
+      lcs: `${WORKER}/?src=${encodeURIComponent('https://quickmap.dot.ca.gov/data/lcs2way.kml')}`,
+      cms: `${WORKER}/?src=${encodeURIComponent('https://quickmap.dot.ca.gov/data/cms.kml')}`
+    };
+
+    // =====================
+    // 2) MAP SETUP
+    // =====================
+    const MERCED_CENTER = [-120.48, 37.30];
+    const VIEW_BOUNDS = [[-121.35, 36.60], [-119.30, 37.90]]; // [W,S],[E,N]
+
     const map = new maplibregl.Map({
       container: 'map',
       style: 'https://demotiles.maplibre.org/style.json',
       center: MERCED_CENTER,
       zoom: 9,
-      minZoom: 7.5,                 // prevent zooming out to the globe
+      minZoom: 7.8,           // keep from zooming out to globe
       maxZoom: 18,
-      maxBounds: VIEW_BOUNDS,       // hard panning/zooming bounds
+      maxBounds: VIEW_BOUNDS, // hard extent
       attributionControl: true
     });
 
@@ -42,106 +67,104 @@
     map.dragRotate.disable();
     map.touchZoomRotate.disableRotation();
 
-    // Log errors to help diagnose CORS/network issues on GH Pages
-    map.on('error', (e) => console.error('Map error:', e && e.error || e));
+    map.on('error', e => console.error('Map error:', e && e.error || e));
 
     map.on('load', () => {
-      // Keep initial view inside the allowed box
       map.fitBounds(VIEW_BOUNDS, { padding: 40, duration: 0 });
 
-      // ---- Basemaps ----
-      map.addSource('osm', {
-        type: 'raster',
-        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-        tileSize: 256,
-        attribution: '© OpenStreetMap contributors'
-      });
-      map.addLayer({ id: 'osm', type: 'raster', source: 'osm' });
-
-      map.addSource('esri', {
-        type: 'raster',
-        tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
-        tileSize: 256,
-        attribution: 'Esri, Maxar, Earthstar Geographics, and the GIS User Community'
-      });
-      map.addLayer({ id: 'satellite', type: 'raster', source: 'esri', layout: { visibility: 'none' } });
-
-      // ---- California counties (for context) ----
+      // County context
       map.addSource('ca-counties', {
         type: 'geojson',
         data: 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/california-counties.geojson'
       });
-      map.addLayer({ id: 'county-fill', type: 'fill', source: 'ca-counties',
-        paint: { 'fill-color': '#6b7280', 'fill-opacity': 0.07 } });
-      map.addLayer({ id: 'county-outline', type: 'line', source: 'ca-counties',
-        paint: { 'line-color': '#222', 'line-width': 1.5, 'line-opacity': 0.9 } });
-      map.addLayer({ id: 'merced-highlight', type: 'line', source: 'ca-counties',
-        filter: ['match', ['get', 'name'], ['Merced', 'Merced County'], true, false],
-        paint: { 'line-color': '#0ea5e9', 'line-width': 3 } });
+      map.addLayer({ id: 'county-fill', type: 'fill', source: 'ca-counties', paint: { 'fill-color': '#6b7280', 'fill-opacity': 0.07 } });
+      map.addLayer({ id: 'county-outline', type: 'line', source: 'ca-counties', paint: { 'line-color': '#222', 'line-width': 1.5, 'line-opacity': 0.9 } });
+      map.addLayer({ id: 'merced-highlight', type: 'line', source: 'ca-counties', filter: ['match', ['get', 'name'], ['Merced', 'Merced County'], true, false], paint: { 'line-color': '#0ea5e9', 'line-width': 3 } });
 
-      // ---- QUICKMAP LAYERS (KML -> GeoJSON) ----
-      const QK = {
-        chp: 'https://quickmap.dot.ca.gov/data/chp-only.kml',     // CHP incidents
-        lcs: 'https://quickmap.dot.ca.gov/data/lcs2way.kml',      // lane closures
-        cms: 'https://quickmap.dot.ca.gov/data/cms.kml',          // message signs
-        cctv: 'https://quickmap.dot.ca.gov/data/cctv.kml',        // traffic cameras
-        chain: 'https://quickmap.dot.ca.gov/data/cc.kml'          // chain controls
-      };
+      // Basemaps (OSM streets + Esri satellite)
+      map.addSource('osm', { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, attribution: '© OpenStreetMap contributors' });
+      map.addLayer({ id: 'osm', type: 'raster', source: 'osm' });
+      map.addSource('esri', { type: 'raster', tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, attribution: 'Esri, Maxar, Earthstar Geographics, and the GIS User Community' });
+      map.addLayer({ id: 'satellite', type: 'raster', source: 'esri', layout: { visibility: 'none' } });
 
-      async function addKmlAsGeoJSON(url, id, layerType = 'circle', paint = {}) {
+      // =====================
+      // 3) DATA LAYER HELPERS
+      // =====================
+      async function addCctv() {
         try {
-          const resp = await fetch(url, { cache: 'no-store' });
+          const resp = await fetch(CCTV_URL, { cache: 'no-store' });
+          if (!resp.ok) throw new Error(`CCTV HTTP ${resp.status}`);
+          const data = await resp.json();
+          const src = 'cctv-src', lyr = 'cctv-lyr';
+          if (map.getLayer(lyr)) map.removeLayer(lyr);
+          if (map.getSource(src)) map.removeSource(src);
+          map.addSource(src, { type: 'geojson', data });
+          map.addLayer({ id: lyr, type: 'circle', source: src, paint: { 'circle-radius': 5, 'circle-color': '#10b981', 'circle-stroke-width': 1, 'circle-stroke-color': '#fff' } });
+
+          map.on('click', lyr, (e) => {
+            const p = e.features?.[0]?.properties || {};
+            const html = `<strong>${p.locationName || 'Camera'}</strong><br>Route: ${p.route ?? '—'}<br><a href="${p.currentImageURL || '#'}" target="_blank" rel="noopener">Latest image</a>`;
+            new maplibregl.Popup().setLngLat(e.lngLat).setHTML(html).addTo(map);
+          });
+          map.on('mouseenter', lyr, () => map.getCanvas().style.cursor = 'pointer');
+          map.on('mouseleave', lyr, () => map.getCanvas().style.cursor = '');
+          console.log('CCTV loaded', data.features?.length || 0);
+        } catch (err) { console.error('CCTV load failed:', err); }
+      }
+
+      async function addKmlLayer(kmlUrl, id, layerType = 'circle', paint = {}) {
+        try {
+          const resp = await fetch(kmlUrl, { cache: 'no-store' });
+          if (!resp.ok) throw new Error(`KML HTTP ${resp.status}`);
           const text = await resp.text();
           const xml = new DOMParser().parseFromString(text, 'text/xml');
           const gj = window.toGeoJSON.kml(xml);
 
-          // Clip to our bounding box (points only; keep lines for closures)
-          const [[w,s],[e,n]] = VIEW_BOUNDS;
-          const data = {
-            type: 'FeatureCollection',
-            features: (gj.features || []).filter(f => {
-              const g = f.geometry; if (!g) return false;
-              if (g.type === 'Point') {
-                const [x,y] = g.coordinates; return x>=w && x<=e && y>=s && y<=n;
-              }
-              return true;
-            })
-          };
-
-          const srcId = `${id}-src`;
-          if (map.getLayer(`${id}-lyr`)) map.removeLayer(`${id}-lyr`);
-          if (map.getSource(srcId)) map.removeSource(srcId);
-          map.addSource(srcId, { type: 'geojson', data });
+          const src = `${id}-src`, lyr = `${id}-lyr`;
+          if (map.getLayer(lyr)) map.removeLayer(lyr);
+          if (map.getSource(src)) map.removeSource(src);
+          map.addSource(src, { type: 'geojson', data: gj });
 
           if (layerType === 'line') {
-            map.addLayer({ id: `${id}-lyr`, type: 'line', source: srcId, paint });
+            map.addLayer({ id: lyr, type: 'line', source: src, paint });
           } else {
-            map.addLayer({
-              id: `${id}-lyr`,
-              type: 'circle',
-              source: srcId,
-              paint: Object.assign({
-                'circle-radius': 5,
-                'circle-color': '#ef4444',
-                'circle-stroke-width': 1,
-                'circle-stroke-color': '#fff'
-              }, paint)
-            });
+            map.addLayer({ id: lyr, type: 'circle', source: src, paint: Object.assign({ 'circle-radius': 5, 'circle-color': '#ef4444', 'circle-stroke-width': 1, 'circle-stroke-color': '#fff' }, paint) });
           }
+          console.log(`KML loaded for ${id}:`, gj.features?.length || 0);
         } catch (err) {
-          console.error('QuickMap layer failed:', id, err);
+          console.error('KML load failed for', id, err);
         }
       }
 
-      // Load layers
-      addKmlAsGeoJSON(QK.chp,   'chp',   'circle', { 'circle-color': '#f59e0b' });
-      addKmlAsGeoJSON(QK.cms,   'cms',   'circle', { 'circle-color': '#6366f1' });
-      addKmlAsGeoJSON(QK.cctv,  'cctv',  'circle', { 'circle-color': '#10b981' });
-      addKmlAsGeoJSON(QK.lcs,   'lcs',   'line',   { 'line-color': '#dc2626', 'line-width': 3, 'line-opacity': 0.8 });
-      addKmlAsGeoJSON(QK.chain, 'chain', 'circle', { 'circle-color': '#0ea5e9' });
+      // Load initial layers
+      addCctv();
+      addKmlLayer(QK.chp, 'chp', 'circle', { 'circle-color': '#f59e0b' });
+      addKmlLayer(QK.lcs, 'lcs', 'line', { 'line-color': '#dc2626', 'line-width': 3, 'line-opacity': 0.8 });
+      addKmlLayer(QK.cms, 'cms', 'circle', { 'circle-color': '#6366f1' });
+
+      // =====================
+      // 4) UI WIRES (checkbox toggles)
+      // =====================
+      const toggles = [
+        { chk: 'chk-cctv', lyr: 'cctv-lyr', loader: addCctv },
+        { chk: 'chk-chp',  lyr: 'chp-lyr',  loader: () => addKmlLayer(QK.chp, 'chp', 'circle', { 'circle-color': '#f59e0b' }) },
+        { chk: 'chk-lcs',  lyr: 'lcs-lyr',  loader: () => addKmlLayer(QK.lcs, 'lcs', 'line', { 'line-color': '#dc2626', 'line-width': 3, 'line-opacity': 0.8 }) },
+        { chk: 'chk-cms',  lyr: 'cms-lyr',  loader: () => addKmlLayer(QK.cms, 'cms', 'circle', { 'circle-color': '#6366f1' }) }
+      ];
+
+      for (const t of toggles) {
+        const el = document.getElementById(t.chk);
+        el?.addEventListener('change', () => {
+          const visible = el.checked;
+          if (!map.getLayer(t.lyr) && visible) { t.loader(); return; }
+          if (map.getLayer(t.lyr)) {
+            map.setLayoutProperty(t.lyr, 'visibility', visible ? 'visible' : 'none');
+          }
+        });
+      }
     });
 
-    // ---- Basemap toggle (Streets ↔ Satellite) ----
+    // Basemap toggle button
     (function addBasemapToggle(){
       const btn = document.createElement('button');
       btn.textContent = 'Satellite';
@@ -159,24 +182,12 @@
       corner.appendChild(wrap);
     })();
 
-    // ---- Home + Refresh controls ----
+    // Home button
     (function addHome(){
       const btn = document.createElement('button');
       btn.textContent = 'Home';
       btn.className = 'maplibregl-ctrl maplibregl-ctrl-group ctrl-btn';
       btn.onclick = () => map.fitBounds(VIEW_BOUNDS, { padding: 40, duration: 500 });
-      const corner = document.querySelector('.maplibregl-ctrl-top-right') || document.body;
-      const wrap = document.createElement('div');
-      wrap.className = 'maplibregl-ctrl maplibregl-ctrl-group';
-      wrap.appendChild(btn);
-      corner.appendChild(wrap);
-    })();
-
-    (function addRefresh(){
-      const btn = document.createElement('button');
-      btn.textContent = 'Refresh';
-      btn.className = 'maplibregl-ctrl maplibregl-ctrl-group ctrl-btn';
-      btn.onclick = () => location.reload();
       const corner = document.querySelector('.maplibregl-ctrl-top-right') || document.body;
       const wrap = document.createElement('div');
       wrap.className = 'maplibregl-ctrl maplibregl-ctrl-group';
