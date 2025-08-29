@@ -2,48 +2,44 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Merced County 511 Prototype</title>
+  <title>Merced County 511 Prototype — Enhanced</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="https://unpkg.com/maplibre-gl@3.5.2/dist/maplibre-gl.css" rel="stylesheet" />
   <style>
     :root { color-scheme: light dark; }
     html, body { height: 100%; margin: 0; padding: 0; }
     #map { width: 100%; height: 100%; }
-    .panel { position:absolute; top:10px; left:10px; z-index:10; background:color-mix(in oklab, Canvas, CanvasText 10%/70%); backdrop-filter: blur(6px); padding:10px; border-radius:12px; font: 13px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; box-shadow: 0 4px 12px rgba(0,0,0,.15); max-width: 340px; }
+    .panel { position:absolute; top:10px; left:10px; z-index:10; background:color-mix(in oklab, Canvas, CanvasText 10%/70%); backdrop-filter: blur(6px); padding:10px; border-radius:12px; font: 13px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; box-shadow: 0 4px 12px rgba(0,0,0,.15); max-width: 310px; }
     .panel h3 { margin:.25rem 0 .5rem; font-size:14px; }
     .row { display:flex; align-items:center; gap:.4rem; margin:.25rem 0; }
     .ctrl-btn { padding: 6px 10px; }
     label { user-select:none; }
-    .subtle { opacity:.8 }
-    .chip { display:inline-block; padding:2px 6px; border-radius:8px; border:1px solid color-mix(in oklab, CanvasText, Canvas 70%); margin:2px 4px 0 0; font-size:11px; }
-    .legend-swatch { width:10px; height:10px; border-radius:2px; display:inline-block; margin-right:6px; vertical-align: -1px; }
+    .legend { display:flex; flex-wrap:wrap; gap:.4rem .6rem; margin-top:.25rem; }
+    .k { width:10px;height:10px;border-radius:2px;display:inline-block;margin-right:.3rem;vertical-align:middle;}
+    .popup-list { max-width: 320px;}
+    .popup-list button { display:block; width:100%; text-align:left; margin:.25rem 0; padding:.4rem .5rem; border-radius:8px; border:1px solid color-mix(in oklab, CanvasText 30%, transparent); background:color-mix(in oklab, Canvas, CanvasText 6%/60%); cursor:pointer; }
   </style>
 </head>
 <body>
   <div id="map"></div>
 
-  <!-- Controls -->
+  <!-- Layer toggles -->
   <div class="panel">
     <h3>Layers</h3>
     <div class="row"><input type="checkbox" id="chk-cctv" checked><label for="chk-cctv">CCTV (GeoJSON)</label></div>
     <div class="row"><input type="checkbox" id="chk-chp" checked><label for="chk-chp">CHP Incidents (KML via Worker)</label></div>
     <div class="row"><input type="checkbox" id="chk-lcs" checked><label for="chk-lcs">Lane Closures (KML via Worker)</label></div>
     <div class="row"><input type="checkbox" id="chk-cms" checked><label for="chk-cms">CMS Signs (KML via Worker)</label></div>
-    <div class="row"><input type="checkbox" id="chk-radar" checked><label for="chk-radar">Radar (NOAA)</label></div>
-    <div class="row"><input type="checkbox" id="chk-metar" checked><label for="chk-metar">Visibility (METAR)</label></div>
     <hr>
-    <h3>Weather (NWS)</h3>
-    <div class="row"><input type="checkbox" id="chk-nws" checked><label for="chk-nws">Active Weather Alerts</label></div>
-    <div class="row" style="gap:.6rem; flex-wrap:wrap">
-      <label class="chip"><input type="checkbox" id="flt-fog" checked> Fog</label>
-      <label class="chip"><input type="checkbox" id="flt-thunder" checked> Thunderstorm</label>
-      <label class="chip"><input type="checkbox" id="flt-snow" checked> Snow/Winter</label>
-    </div>
-    <div class="subtle" style="margin-top:.25rem">Data: <a href="https://api.weather.gov/" target="_blank" rel="noopener">NWS</a> (alerts), <a href="https://radar.weather.gov/" target="_blank" rel="noopener">Radar</a>, <a href="https://aviationweather.gov/data/api/" target="_blank" rel="noopener">AWC METAR</a>. Updates ~5 minutes. <span id="status-badges"></span></div>
-    <div style="margin-top:.4rem">
-      <div><span class="legend-swatch" style="background:#0ea5e9"></span> Fog</div>
-      <div><span class="legend-swatch" style="background:#f97316"></span> Thunderstorm</div>
-      <div><span class="legend-swatch" style="background:#6366f1"></span> Snow/Winter</div>
+    <div class="row"><input type="checkbox" id="chk-nws" checked><label for="chk-nws">NWS Alerts (polygons)</label></div>
+    <div class="row"><input type="checkbox" id="chk-fog" checked><label for="chk-fog">Dense Fog Advisories</label></div>
+    <div class="row"><input type="checkbox" id="chk-metar" checked><label for="chk-metar">Visibility (METAR, mi)</label></div>
+    <div class="legend">
+      <span><i class="k" style="background:#10b981"></i>CCTV</span>
+      <span><i class="k" style="background:#6366f1"></i>CMS</span>
+      <span><i class="k" style="background:#f59e0b"></i>CHP</span>
+      <span><i class="k" style="background:#dc2626"></i>LCS</span>
+      <span><i class="k" style="background:#1f2937"></i>Fog</span>
     </div>
   </div>
 
@@ -53,10 +49,8 @@
 
   <script>
     // =====================
-    // 1) SET THIS ONCE
+    // 1) CONFIG
     // =====================
-    // Replace ONLY this base with your Cloudflare Worker URL
-    // Example: const WORKER = 'https://restless-dream-d169.windman007.workers.dev';
     const WORKER = 'https://restless-dream-d169.windman007.workers.dev';
 
     // ArcGIS CCTV FeatureServer (GeoJSON works cross-origin)
@@ -74,35 +68,17 @@
       cms: `${WORKER}/?src=${encodeURIComponent('https://quickmap.dot.ca.gov/data/cms.kml')}`
     };
 
-    // NWS Alerts (CA-wide, filtered client-side)
-    const NWS_ALERTS = 'https://api.weather.gov/alerts/active?area=CA';
+    // NWS APIs (public domain)
+    const NWS_ALERTS_BASE = 'https://api.weather.gov/alerts';
+    const NWS_STATIONS = 'https://api.weather.gov/stations';
 
-    // NOAA Radar (ArcGIS MapServer tiles)
-    // Use nowCOAST public tiled radar (CORS-friendly)
-    // Primary: Iowa State Mesonet cached NEXRAD tiles (very reliable)
-    const RADAR_TILES = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::USCOMP-N0Q-1/{z}/{x}/{y}.png';
-    // Fallback: nowCOAST public tiles
-    const RADAR_TILES_FALLBACK = 'https://nowcoast.noaa.gov/arcgis/rest/services/nowcoast/radar_meteo_imagery_nexrad/MapServer/tile/{z}/{y}/{x}';
-
-    // AWC METAR API (proxied through WORKER to avoid CORS)
-    function metarUrlForBounds(bounds) {
-      const west = bounds[0][0].toFixed(4);
-      const south = bounds[0][1].toFixed(4);
-      const east = bounds[1][0].toFixed(4);
-      const north = bounds[1][1].toFixed(4);
-      // Direct ADDS GeoJSON (CORS-enabled)
-      const base = `https://aviationweather.gov/adds/dataserver_current/httpparam?dataSource=metars&requestType=geojson&hoursBeforeNow=3&minLon=${west}&minLat=${south}&maxLon=${east}&maxLat=${north}`;
-      return base;
-    }&minLat=${south}&maxLon=${east}&maxLat=${north}`;
-      return `${WORKER}/?src=${encodeURIComponent(base)}`;
-    }
-
-    // =====================
-    // 2) MAP SETUP
-    // =====================
+    // Bounds / view
     const MERCED_CENTER = [-120.48, 37.30];
     const VIEW_BOUNDS = [[-122.30, 36.60], [-119.00, 37.90]]; // [W,S],[E,N]
 
+    // =====================
+    // 2) MAP
+    // =====================
     const map = new maplibregl.Map({
       container: 'map',
       style: 'https://demotiles.maplibre.org/style.json',
@@ -125,7 +101,10 @@
       map.fitBounds(VIEW_BOUNDS, { padding: 40, duration: 0 });
 
       // County context
-      map.addSource('ca-counties', { type: 'geojson', data: 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/california-counties.geojson' });
+      map.addSource('ca-counties', {
+        type: 'geojson',
+        data: 'https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/california-counties.geojson'
+      });
       map.addLayer({ id: 'county-fill', type: 'fill', source: 'ca-counties', paint: { 'fill-color': '#6b7280', 'fill-opacity': 0.07 } });
       map.addLayer({ id: 'county-outline', type: 'line', source: 'ca-counties', paint: { 'line-color': '#222', 'line-width': 1.5, 'line-opacity': 0.9 } });
       map.addLayer({ id: 'merced-highlight', type: 'line', source: 'ca-counties', filter: ['match', ['get', 'name'], ['Merced', 'Merced County'], true, false], paint: { 'line-color': '#0ea5e9', 'line-width': 3 } });
@@ -136,44 +115,9 @@
       map.addSource('esri', { type: 'raster', tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256, attribution: 'Esri, Maxar, Earthstar Geographics, and the GIS User Community' });
       map.addLayer({ id: 'satellite', type: 'raster', source: 'esri', layout: { visibility: 'none' } });
 
-      // Radar source/layer (beneath traffic layers)
-      function ensureRadar(onFallback = false) {
-        try {
-          const srcId = 'nws-radar';
-          const tiles = onFallback ? RADAR_TILES_FALLBACK : RADAR_TILES;
-          if (map.getSource(srcId)) map.removeSource(srcId);
-          map.addSource(srcId, { type: 'raster', tiles: [tiles], tileSize: 256, attribution: 'NOAA/NWS, Iowa State Mesonet' });
-          if (!map.getLayer('nws-radar')) {
-            map.addLayer({ id: 'nws-radar', type: 'raster', source: srcId, paint: { 'raster-opacity': 0.7 } }, 'county-outline');
-          }
-        } catch (e) { console.error('Radar init error', e); }
-      }
-      ensureRadar();
-      map.on('error', (e) => {
-        if (String(e && e.error && e.error.message || '').includes('HTTP') && !map.__radarTriedFallback) {
-          map.__radarTriedFallback = true;
-          console.warn('Radar tiles failing, switching to fallback');
-          ensureRadar(true);
-        }
-      });
-
       // =====================
-      // 3) DATA LAYER HELPERS
+      // 3) DATA LAYERS (clustered + generic click picker)
       // =====================
-      function pointInBounds([lng, lat]) {
-        return lng >= VIEW_BOUNDS[0][0] && lng <= VIEW_BOUNDS[1][0] && lat >= VIEW_BOUNDS[0][1] && lat <= VIEW_BOUNDS[1][1];
-      }
-      function geometryInBounds(geom) {
-        if (!geom) return false;
-        if (geom.type === 'Point') return pointInBounds(geom.coordinates);
-        if (geom.type === 'MultiPoint') return geom.coordinates.some(pointInBounds);
-        if (geom.type === 'LineString') return geom.coordinates.some(pointInBounds);
-        if (geom.type === 'MultiLineString') return geom.coordinates.flat().some(pointInBounds);
-        if (geom.type === 'Polygon') return geom.coordinates.flat().some(pointInBounds);
-        if (geom.type === 'MultiPolygon') return geom.coordinates.flat(2).some(pointInBounds);
-        return false;
-      }
-
       async function addCctv() {
         try {
           const resp = await fetch(CCTV_URL, { cache: 'no-store' });
@@ -185,200 +129,213 @@
               p.currentImageURL = p.currentImageURL.replace(/^http:/, 'https:');
             }
           }
-          const src = 'cctv-src', lyr = 'cctv-lyr';
-          if (map.getLayer(lyr)) map.removeLayer(lyr);
+          const src = 'cctv-src';
           if (map.getSource(src)) map.removeSource(src);
-          map.addSource(src, { type: 'geojson', data });
-          map.addLayer({ id: lyr, type: 'circle', source: src, paint: { 'circle-radius': ["interpolate", ["linear"], ["zoom"], 6, 3, 10, 5, 14, 8], 'circle-color': '#10b981', 'circle-stroke-width': 1, 'circle-stroke-color': '#fff' } });
-          map.on('click', lyr, (e) => {
-            const f = e.features && e.features[0];
-            const p = (f && f.properties) || {};
-            const [lng, lat] = (f && f.geometry && f.geometry.coordinates) || [];
-            const img = p.currentImageURL ? `<div style="margin-top:6px;"><img src="${p.currentImageURL}" alt="Camera" style="max-width:320px;max-height:240px;display:block;border-radius:8px;"/></div>` : '<div style="margin-top:6px;"><em>No image available</em></div>';
-            const html = `
-              <strong>${p.locationName || 'Camera'}</strong><br>
-              Route: ${p.route ?? '—'}<br>
-              County: ${p.county ?? '—'}<br>
-              Location: ${(lat ?? 0).toFixed(5)}, ${(lng ?? 0).toFixed(5)}
-              ${img}
-            `;
-            new maplibregl.Popup({ maxWidth: '360px' }).setLngLat(e.lngLat).setHTML(html).addTo(map);
-          });
-          map.on('mouseenter', lyr, () => map.getCanvas().style.cursor = 'pointer');
-          map.on('mouseleave', lyr, () => map.getCanvas().style.cursor = '');
-          console.log('CCTV loaded (dots):', data.features?.length || 0);
+          map.addSource(src, { type: 'geojson', data, cluster: true, clusterRadius: 40, clusterProperties: {} });
+
+          // clusters
+          map.addLayer({ id: 'cctv-clusters', type: 'circle', source: src, filter: ['has', 'point_count'], paint: { 'circle-color': '#0ea5e9', 'circle-radius': ['interpolate', ['linear'], ['get', 'point_count'], 2, 12, 100, 22], 'circle-stroke-color':'#fff', 'circle-stroke-width':1 } });
+          map.addLayer({ id: 'cctv-count', type: 'symbol', source: src, filter: ['has', 'point_count'], layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-size': 12 }, paint: { 'text-color':'#fff' } });
+
+          // unclustered points
+          map.addLayer({ id: 'cctv-lyr', type: 'circle', source: src, filter: ['!', ['has', 'point_count']], paint: { 'circle-radius': ["interpolate", ["linear"], ["zoom"], 6, 3, 10, 5, 14, 8], 'circle-color': '#10b981', 'circle-stroke-width': 1, 'circle-stroke-color': '#fff' } });
         } catch (err) { console.error('CCTV load failed:', err); }
       }
 
-      async function addKmlLayer(kmlUrl, id, layerType = 'circle', paint = {}) {
+      async function addKmlLayer(kmlUrl, id, color, asLine=false) {
         try {
           const resp = await fetch(kmlUrl, { cache: 'no-store' });
           if (!resp.ok) throw new Error(`KML HTTP ${resp.status}`);
           const text = await resp.text();
           const xml = new DOMParser().parseFromString(text, 'text/xml');
           const gj = window.toGeoJSON.kml(xml);
-          const src = `${id}-src`, lyr = `${id}-lyr`;
-          if (map.getLayer(lyr)) map.removeLayer(lyr);
+          const src = `${id}-src`;
           if (map.getSource(src)) map.removeSource(src);
-          map.addSource(src, { type: 'geojson', data: gj });
-          if (layerType === 'line') {
-            map.addLayer({ id: lyr, type: 'line', source: src, paint });
+          map.addSource(src, { type: 'geojson', data: gj, cluster: !asLine, clusterRadius: 40 });
+
+          if (asLine) {
+            map.addLayer({ id: `${id}-lyr`, type: 'line', source: src, paint: { 'line-color': color, 'line-width': 3, 'line-opacity': 0.8 } });
           } else {
-            map.addLayer({ id: lyr, type: 'circle', source: src, paint: Object.assign({ 'circle-radius': ["interpolate", ["linear"], ["zoom"], 6, 3, 10, 5, 14, 8], 'circle-color': '#ef4444', 'circle-stroke-width': 1, 'circle-stroke-color': '#fff' }, paint) });
+            map.addLayer({ id: `${id}-clusters`, type: 'circle', source: src, filter: ['has', 'point_count'], paint: { 'circle-color': color, 'circle-opacity': .9, 'circle-radius': ['interpolate', ['linear'], ['get', 'point_count'], 2, 12, 100, 22], 'circle-stroke-color':'#fff', 'circle-stroke-width':1 } });
+            map.addLayer({ id: `${id}-count`, type: 'symbol', source: src, filter: ['has', 'point_count'], layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-size': 12 }, paint: { 'text-color':'#fff' } });
+            map.addLayer({ id: `${id}-lyr`, type: 'circle', source: src, filter: ['!', ['has', 'point_count']], paint: { 'circle-radius': ["interpolate", ["linear"], ["zoom"], 6, 3, 10, 5, 14, 8], 'circle-color': color, 'circle-stroke-width': 1, 'circle-stroke-color': '#fff' } });
           }
-          const popupHtml = (p) => {
-            const title = p.name || p.Title || id.toUpperCase();
-            const desc = p.description || p.Description || '<em>No details</em>';
-            return `<strong>${title}</strong><div style="max-width:320px;">${desc}</div>`;
-          };
-          map.on('click', lyr, (e) => {
-            const f = e.features?.[0]; const p = f?.properties || {};
-            new maplibregl.Popup({ maxWidth: '360px' }).setLngLat(e.lngLat).setHTML(popupHtml(p)).addTo(map);
-          });
-          map.on('mouseenter', lyr, () => map.getCanvas().style.cursor = 'pointer');
-          map.on('mouseleave', lyr, () => map.getCanvas().style.cursor = '');
-          console.log(`KML loaded for ${id}:`, gj.features?.length || 0);
         } catch (err) { console.error('KML load failed for', id, err); }
       }
 
-      // ===============
-      // NWS ALERTS
-      // ===============
-      const WEATHER_EVENT_MAP = { fog: ['Dense Fog Advisory','Freezing Fog Advisory'], thunder: ['Severe Thunderstorm Warning','Severe Thunderstorm Watch','Severe Thunderstorm Advisory','Thunderstorm Warning','Special Weather Statement'], snow: ['Winter Storm Warning','Winter Weather Advisory','Blizzard Warning','Snow Squall Warning','Winter Storm Watch','Blizzard Watch'] };
-
-      function classifyAlert(eventName) {
-        if (!eventName) return null; const e = String(eventName);
-        if (WEATHER_EVENT_MAP.fog.some(x => e.includes(x))) return 'fog';
-        if (WEATHER_EVENT_MAP.thunder.some(x => e.includes(x))) return 'thunder';
-        if (WEATHER_EVENT_MAP.snow.some(x => e.includes(x))) return 'snow';
-        return null;
-      }
-      function alertPaint(type) {
-        const colors = { fog: '#0ea5e9', thunder: '#f97316', snow: '#6366f1' };
-        return { fill: { 'fill-color': colors[type], 'fill-opacity': 0.18 }, line: { 'line-color': colors[type], 'line-width': 2, 'line-opacity': 0.9 }, circle: { 'circle-radius': ["interpolate", ["linear"], ["zoom"], 6, 3, 10, 5, 14, 8], 'circle-color': colors[type], 'circle-stroke-width': 1, 'circle-stroke-color': '#fff' } };
-      }
-      async function loadNwsAlerts() {
+      // ---- NWS Alerts (all) + dense fog subset
+      async function addNwsAlerts() {
+        const bbox = VIEW_BOUNDS.flat().join(','); // west,south,east,north
+        const url = `${NWS_ALERTS_BASE}?status=actual&message_type=alert&bbox=${bbox}`;
         try {
-          const resp = await fetch(NWS_ALERTS, { headers: { 'Accept': 'application/geo+json' }, cache: 'no-store' });
-          if (!resp.ok) throw new Error(`NWS HTTP ${resp.status}`);
-          const data = await resp.json();
-          const feats = (data.features || []).filter(f => classifyAlert(f.properties?.event) && geometryInBounds(f.geometry)).map(f => ({ type:'Feature', geometry:f.geometry, properties:{ id:f.id, event:f.properties?.event, headline:f.properties?.headline, sent:f.properties?.sent, effective:f.properties?.effective, onset:f.properties?.onset, expires:f.properties?.expires, ends:f.properties?.ends, senderName:f.properties?.senderName, instruction:f.properties?.instruction, description:f.properties?.description, severity:f.properties?.severity, certainty:f.properties?.certainty, urgency:f.properties?.urgency, type: classifyAlert(f.properties?.event) } }));
-          const byType = { fog: feats.filter(f => f.properties.type==='fog'), thunder: feats.filter(f => f.properties.type==='thunder'), snow: feats.filter(f => f.properties.type==='snow') };
-          for (const type of ['fog','thunder','snow']) {
-            const srcId = `nws-${type}-src`, polyLyr = `nws-${type}-poly`, ptLyr = `nws-${type}-pt`;
-            const gjf = { type:'FeatureCollection', features: byType[type] };
-            if (map.getSource(srcId)) map.getSource(srcId).setData(gjf); else map.addSource(srcId, { type:'geojson', data: gjf });
-            const paint = alertPaint(type);
-            if (!map.getLayer(polyLyr)) {
-              map.addLayer({ id: polyLyr, type:'fill', source: srcId, filter:['==',['geometry-type'],'Polygon'], paint: paint.fill });
-              map.addLayer({ id: polyLyr+'-outline', type:'line', source: srcId, filter:['==',['geometry-type'],'Polygon'], paint: paint.line });
-              map.addLayer({ id: polyLyr+'-line', type:'line', source: srcId, filter:['==',['geometry-type'],'LineString'], paint: paint.line });
-            }
-            if (!map.getLayer(ptLyr)) { map.addLayer({ id: ptLyr, type:'circle', source: srcId, filter:['==',['geometry-type'],'Point'], paint: paint.circle }); }
-            function bindPopups(lyr) {
-              map.on('click', lyr, (e) => {
-                const f = e.features?.[0]; const p = f?.properties || {};
-                const html = `<div style="max-width:360px"><div class="chip" style="border-color:#888">${p.event || 'Weather Alert'}</div><div style="margin-top:6px"><strong>${p.headline || ''}</strong></div><div style="margin-top:4px">Severity: ${p.severity || '—'} | Urgency: ${p.urgency || '—'} | Certainty: ${p.certainty || '—'}</div><div style="margin-top:4px">Effective: ${p.effective ? new Date(p.effective).toLocaleString() : '—'}</div><div>Expires: ${p.expires ? new Date(p.expires).toLocaleString() : (p.ends ? new Date(p.ends).toLocaleString() : '—')}</div><details style="margin-top:6px"><summary>More</summary><div style="white-space: pre-wrap;">${(p.instruction || p.description || '').slice(0,2000)}</div><div class="subtle" style="margin-top:6px">Source: ${p.senderName || 'NWS'}</div></details></div>`;
-                new maplibregl.Popup({ maxWidth:'380px' }).setLngLat(e.lngLat).setHTML(html).addTo(map);
-              });
-              map.on('mouseenter', lyr, () => map.getCanvas().style.cursor = 'pointer');
-              map.on('mouseleave', lyr, () => map.getCanvas().style.cursor = '');
-            }
-            if (!map.__nwsPopupBound) {
-              ['fog','thunder','snow'].forEach(t => { bindPopups(`nws-${t}-pt`); bindPopups(`nws-${t}-poly`); bindPopups(`nws-${t}-poly-outline`); bindPopups(`nws-${t}-poly-line`); });
-              map.__nwsPopupBound = true;
-            }
+          const resp = await fetch(url, { headers: { 'Accept': 'application/geo+json' }, cache: 'no-store' });
+          if (!resp.ok) throw new Error(`NWS alerts HTTP ${resp.status}`);
+          const gj = await resp.json();
+          const src = 'nws-alerts-src';
+          if (map.getSource(src)) map.removeSource(src);
+          map.addSource(src, { type: 'geojson', data: gj });
+
+          // Polygons
+          map.addLayer({ id: 'nws-alerts-fill', type: 'fill', source: src, paint: { 'fill-color': ['match', ['get','event'], 'Dense Fog Advisory', '#111827', 'Flood Warning', '#86198f', 'Flood Advisory', '#a21caf', 'Flash Flood Warning', '#7c3aed', /* other */ '#6b7280' ], 'fill-opacity': 0.25 } });
+          map.addLayer({ id: 'nws-alerts-outline', type: 'line', source: src, paint: { 'line-color': ['match', ['get','event'], 'Dense Fog Advisory', '#111827', 'Flood Warning', '#86198f', 'Flood Advisory', '#a21caf', 'Flash Flood Warning', '#7c3aed', '#6b7280' ], 'line-width': 1.5, 'line-opacity': 0.9 } });
+
+          // Dense Fog label subset
+          map.addLayer({ id: 'fog-lyr', type: 'symbol', source: src, filter: ['==', ['get','event'], 'Dense Fog Advisory'], layout: { 'text-field': 'Fog Adv.', 'text-size': 12, 'text-offset': [0,1] }, paint: { 'text-color':'#111827' } });
+        } catch (e) { console.error('NWS alerts failed', e); }
+      }
+
+      // ---- METAR latest visibility points from nearby stations
+      async function addMetarVisibility() {
+        try {
+          const [w,s] = VIEW_BOUNDS[0]; const [e,n] = VIEW_BOUNDS[1];
+          const listResp = await fetch(`${NWS_STATIONS}?bbox=${w},${s},${e},${n}`, { cache:'no-store' });
+          if (!listResp.ok) throw new Error('Stations list error');
+          const list = await listResp.json();
+          const feats = list.features || [];
+          // Limit concurrent fetches to keep it light
+          const batches = [];
+          for (const st of feats) {
+            const id = st.properties.stationIdentifier;
+            const [lng, lat] = st.geometry.coordinates;
+            if (!id) continue;
+            batches.push(fetch(`${NWS_STATIONS}/${id}/observations/latest`, { cache:'no-store' }).then(r => r.ok ? r.json() : null).then(o => {
+              if (!o || !o.properties) return null;
+              const visM = o.properties.visibility && o.properties.visibility.value; // meters
+              const cond = o.properties.textDescription || '';
+              if (visM == null) return null;
+              const visMi = visM/1609.344;
+              return { type:'Feature', geometry:{ type:'Point', coordinates:[lng, lat] }, properties:{ id, visMi, cond, raw:o.properties.rawMessage || '', time:o.properties.timestamp } };
+            }).catch(() => null));
           }
-          console.log('NWS alerts updated:', feats.length);
-        } catch (err) { console.error('NWS alerts failed:', err); }
+          const results = (await Promise.all(batches)).filter(Boolean);
+          const gj = { type:'FeatureCollection', features: results };
+          const src = 'metar-vis-src';
+          if (map.getSource(src)) map.removeSource(src);
+          map.addSource(src, { type:'geojson', data: gj });
+          map.addLayer({ id: 'metar-vis-lyr', type: 'symbol', source: src, layout: { 'text-field': ['concat', ['to-string', ['round', ['get','visMi'] ]], ' mi'], 'text-size': 12, 'text-offset':[0, -1] }, paint: { 'text-halo-color':'#fff', 'text-halo-width':1, 'text-color':'#0f172a' } });
+        } catch (e) { console.error('METAR visibility failed', e); }
       }
 
       // Load initial layers
       addCctv();
-      addKmlLayer(QK.chp, 'chp', 'circle', { 'circle-color': '#f59e0b' });
-      addKmlLayer(QK.lcs, 'lcs', 'line', { 'line-color': '#dc2626', 'line-width': 3, 'line-opacity': 0.8 });
-      addKmlLayer(QK.cms, 'cms', 'circle', { 'circle-color': '#6366f1' });
-      loadNwsAlerts();
-      const NWS_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-      setInterval(loadNwsAlerts, NWS_INTERVAL_MS);
-
-      // Load METAR visibility points
-      async function loadMetarVisibility() {
-        try {
-          const url = metarUrlForBounds(VIEW_BOUNDS);
-          const resp = await fetch(url, { cache: 'no-store' });
-          if (!resp.ok) throw new Error(`METAR HTTP ${resp.status}`);
-          const gj = await resp.json();
-          function parseVisSM(raw) {
-            if (!raw) return null;
-            const m = String(raw).match(/(?:\s|^)(M)?(\d+)?(?:\s(\d)\/(\d))?SM/);
-            if (!m) return null;
-            const lessThan = !!m[1];
-            const whole = m[2] ? parseInt(m[2], 10) : 0;
-            const num = m[3] ? parseInt(m[3], 10) : 0;
-            const den = m[4] ? parseInt(m[4], 10) : 1;
-            let val = whole + (den ? num/den : 0);
-            if (lessThan && val > 0) val = Math.max(val - 0.01, 0);
-            return val;
-          }
-          const features = (gj.features || []).map(f => {
-            const p = Object.assign({}, f.properties);
-            const raw = p.rawOb || p.raw || p.raw_text || '';
-            const vis = parseVisSM(raw);
-            const id = p.station || p.icaoId || p.icao || p.id || 'STN';
-            const time = p.obsTime || p.observed || p.time || p.observation_time || null;
-            return { type: 'Feature', geometry: f.geometry, properties: { id, raw, vis_sm: vis, obs_time: time } };
-          }).filter(f => f.geometry && f.geometry.type === 'Point' && geometryInBounds(f.geometry));
-          const srcId = 'metar-vis-src', lyrId = 'metar-vis-lyr';
-          const gjOut = { type: 'FeatureCollection', features };
-          if (map.getSource(srcId)) map.getSource(srcId).setData(gjOut); else map.addSource(srcId, { type: 'geojson', data: gjOut });
-          const stops = [ [0.01, '#7f1d1d'], [0.25, '#b91c1c'], [0.5, '#dc2626'], [1, '#f97316'], [3, '#f59e0b'], [5, '#10b981'], [7, '#22c55e'] ];
-          if (!map.getLayer(lyrId)) {
-            map.addLayer({ id: lyrId, type: 'circle', source: srcId, paint: { 'circle-radius': ["interpolate", ["linear"], ["zoom"], 7, 4, 9, 6, 12, 9], 'circle-stroke-width': 1, 'circle-stroke-color': '#fff', 'circle-color': [ 'step', ['coalesce', ['get', 'vis_sm'], -1], '#6b7280', ...stops.flat() ] } });
-            map.on('click', lyrId, (e) => {
-              const f = e.features?.[0]; const p = f?.properties || {};
-              const visTxt = p.vis_sm != null ? `${p.vis_sm.toFixed(2)} sm` : '—';
-              const html = `<strong>${p.id || 'Station'}</strong><br>Visibility: ${visTxt}<br><small>${p.obs_time ? new Date(p.obs_time).toLocaleString() : ''}</small><details style="margin-top:6px"><summary>METAR</summary><pre style="white-space: pre-wrap; margin:0">${p.raw || ''}</pre></details>`;
-              new maplibregl.Popup({ maxWidth: '360px' }).setLngLat(e.lngLat).setHTML(html).addTo(map);
-            });
-            map.on('mouseenter', lyrId, () => map.getCanvas().style.cursor = 'pointer');
-            map.on('mouseleave', lyrId, () => map.getCanvas().style.cursor = '');
-          }
-          console.log('METAR visibility stations:', features.length);
-          const st = document.getElementById('status-badges');
-          if (st) st.innerHTML = `<span class='chip'>METAR: ${features.length}</span> <span class='chip'>${new Date().toLocaleTimeString()}</span>`;
-        } catch (err) { console.error('METAR visibility failed:', err); }
-      }
-      loadMetarVisibility();
-      setInterval(loadMetarVisibility, 5 * 60 * 1000);
+      addKmlLayer(QK.chp, 'chp', '#f59e0b', false);
+      addKmlLayer(QK.lcs, 'lcs', '#dc2626', true);
+      addKmlLayer(QK.cms, 'cms', '#6366f1', false);
+      addNwsAlerts();
+      addMetarVisibility();
 
       // =====================
-      // 4) UI WIRES (checkbox toggles)
+      // 4) TOGGLES
       // =====================
       const toggles = [
-        { chk: 'chk-cctv', lyr: 'cctv-lyr', loader: addCctv },
-        { chk: 'chk-chp',  lyr: 'chp-lyr',  loader: () => addKmlLayer(QK.chp, 'chp', 'circle', { 'circle-color': '#f59e0b' }) },
-        { chk: 'chk-lcs',  lyr: 'lcs-lyr',  loader: () => addKmlLayer(QK.lcs, 'lcs', 'line', { 'line-color': '#dc2626', 'line-width': 3, 'line-opacity': 0.8 }) },
-        { chk: 'chk-cms',  lyr: 'cms-lyr',  loader: () => addKmlLayer(QK.cms, 'cms', 'circle', { 'circle-color': '#6366f1' }) }
+        { chk: 'chk-cctv', layers: ['cctv-clusters','cctv-count','cctv-lyr'], loader: addCctv },
+        { chk: 'chk-chp',  layers: ['chp-clusters','chp-count','chp-lyr'], loader: () => addKmlLayer(QK.chp, 'chp', '#f59e0b') },
+        { chk: 'chk-lcs',  layers: ['lcs-lyr'], loader: () => addKmlLayer(QK.lcs, 'lcs', '#dc2626', true) },
+        { chk: 'chk-cms',  layers: ['cms-clusters','cms-count','cms-lyr'], loader: () => addKmlLayer(QK.cms, 'cms', '#6366f1') },
+        { chk: 'chk-nws',  layers: ['nws-alerts-fill','nws-alerts-outline'], loader: addNwsAlerts },
+        { chk: 'chk-fog',  layers: ['fog-lyr'], loader: addNwsAlerts },
+        { chk: 'chk-metar', layers: ['metar-vis-lyr'], loader: addMetarVisibility },
       ];
       for (const t of toggles) {
         const el = document.getElementById(t.chk);
         el?.addEventListener('change', () => {
           const visible = el.checked;
-          if (!map.getLayer(t.lyr) && visible) { t.loader(); return; }
-          if (map.getLayer(t.lyr)) { map.setLayoutProperty(t.lyr, 'visibility', visible ? 'visible' : 'none'); }
+          // If layer not added yet and user enables, (re)load it
+          const haveAny = t.layers.some(id => map.getLayer(id));
+          if (!haveAny && visible) { t.loader(); return; }
+          for (const id of t.layers) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
         });
       }
-      // Radar & METAR toggles
-      document.getElementById('chk-radar')?.addEventListener('change', (e) => {
-        const vis = e.target.checked ? 'visible' : 'none';
-        if (map.getLayer('nws-radar')) map.setLayoutProperty('nws-radar', 'visibility', vis);
+
+      // =====================
+      // 5) OVERLAP HANDLING — click picker
+      // =====================
+      const CLICK_LAYERS = ['cctv-lyr','cms-lyr','chp-lyr','lcs-lyr','nws-alerts-fill','fog-lyr','metar-vis-lyr'];
+
+      function htmlForFeature(f) {
+        const id = f.layer?.id || '';
+        const p = f.properties || {};
+        if (id === 'cctv-lyr') {
+          const url = p.currentImageURL || '';
+          return `<div><strong>${p.locationName || 'Camera'}</strong><br>Route: ${p.route ?? '—'}<br>County: ${p.county ?? '—'}${url ? `<div style='margin-top:6px'><img src='${url}' style='max-width:320px;max-height:240px;border-radius:8px'></div>` : ''}</div>`;
+        }
+        if (id === 'cms-lyr' || id === 'chp-lyr') {
+          const title = p.name || p.Title || (id.startsWith('cms') ? 'CMS Sign' : 'CHP');
+          const desc = p.description || p.Description || '<em>No details</em>';
+          return `<div><strong>${title}</strong><div style='max-width:320px;'>${desc}</div></div>`;
+        }
+        if (id === 'lcs-lyr') {
+          const title = p.name || p.Title || 'Lane Closure';
+          const desc = p.description || p.Description || '<em>No details</em>';
+          return `<div><strong>${title}</strong><div style='max-width:320px;'>${desc}</div>`;
+        }
+        if (id === 'nws-alerts-fill' || id === 'fog-lyr') {
+          const evt = p.event || 'NWS Alert';
+          const headline = p.headline || '';
+          const eff = p.effective || '';
+          const exp = p.expires || '';
+          return `<div><strong>${evt}</strong><div>${headline}</div><div><small>${eff} → ${exp}</small></div></div>`;
+        }
+        if (id === 'metar-vis-lyr') {
+          return `<div><strong>Visibility</strong><br>${Number(p.visMi).toFixed(1)} mi — ${p.cond || ''}<br><small>${p.id} • ${new Date(p.time).toLocaleString()}</small><br><pre style='white-space:pre-wrap'>${p.raw || ''}</pre></div>`;
+        }
+        return '<em>Feature</em>';
+      }
+
+      function titleForFeature(f) {
+        const id = f.layer?.id || '';
+        const p = f.properties || {};
+        if (id === 'cctv-lyr') return `CCTV — ${p.locationName || 'Camera'}`;
+        if (id === 'cms-lyr') return `CMS — ${p.name || 'Sign'}`;
+        if (id === 'chp-lyr') return `CHP — ${p.name || 'Incident'}`;
+        if (id === 'lcs-lyr') return `LCS — ${p.name || 'Closure'}`;
+        if (id === 'nws-alerts-fill' || id === 'fog-lyr') return `NWS — ${p.event || 'Alert'}`;
+        if (id === 'metar-vis-lyr') return `METAR — ${p.id || 'Station'}`;
+        return 'Feature';
+      }
+
+      function showPopupForFeature(f, lngLat) {
+        new maplibregl.Popup({ maxWidth: '360px' })
+          .setLngLat(lngLat)
+          .setHTML(htmlForFeature(f))
+          .addTo(map);
+      }
+
+      map.on('click', (e) => {
+        const radius = 8; // px search radius
+        const feats = map.queryRenderedFeatures([[e.point.x - radius, e.point.y - radius],[e.point.x + radius, e.point.y + radius]], { layers: CLICK_LAYERS.filter(id => map.getLayer(id)) });
+        if (!feats.length) return;
+        // If clicked a cluster: zoom into it
+        const cl = feats.find(f => /-clusters$/.test(f.layer.id));
+        if (cl && map.getSource(cl.layer.source).type === 'geojson') {
+          const src = map.getSource(cl.layer.source);
+          src.getClusterExpansionZoom(cl.properties.cluster_id, (err, zoom) => {
+            if (err) return console.warn(err);
+            map.easeTo({ center: e.lngLat, zoom });
+          });
+          return;
+        }
+        const pointFeats = feats.filter(f => !/-clusters$/.test(f.layer.id) && f.geometry.type === 'Point' || f.layer.id === 'lcs-lyr' || f.layer.id === 'nws-alerts-fill' || f.layer.id === 'fog-lyr');
+        if (pointFeats.length === 1) { showPopupForFeature(pointFeats[0], e.lngLat); return; }
+
+        // Multiple features: show a chooser
+        const items = pointFeats.slice(0, 8).map((f, i) => {
+          return `<button data-idx="${i}">${titleForFeature(f)}</button>`;
+        }).join('');
+        const container = document.createElement('div');
+        container.className = 'popup-list';
+        container.innerHTML = `<strong>Choose an item here:</strong>${items}`;
+        const pop = new maplibregl.Popup({ maxWidth: '360px' }).setLngLat(e.lngLat).setDOMContent(container).addTo(map);
+        container.querySelectorAll('button').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const i = +btn.getAttribute('data-idx');
+            pop.remove();
+            showPopupForFeature(pointFeats[i], e.lngLat);
+          });
+        });
       });
-      document.getElementById('chk-metar')?.addEventListener('change', (e) => {
-        const vis = e.target.checked ? 'visible' : 'none';
-        if (map.getLayer('metar-vis-lyr')) map.setLayoutProperty('metar-vis-lyr', 'visibility', vis);
-      });
-    });
+
+    }); // end load
 
     // Basemap toggle button
     (function addBasemapToggle(){
